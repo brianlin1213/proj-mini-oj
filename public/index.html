@@ -121,6 +121,8 @@
         import { EditorView, keymap } from "https://esm.sh/@codemirror/view";
         import { cpp } from "https://esm.sh/@codemirror/lang-cpp";
         import { indentWithTab } from "https://esm.sh/@codemirror/commands";
+        import { bracketMatching } from "https://esm.sh/@codemirror/language";
+        import { closeBrackets, closeBracketsKeymap } from "https://esm.sh/@codemirror/autocomplete";
 
         const cppTemplate = `#include <iostream>
 using namespace std;
@@ -147,8 +149,13 @@ int main() {
             doc: cppTemplate,
             extensions: [
                 basicSetup,
-                keymap.of([indentWithTab]),
-                cpp()
+                cpp(),
+                closeBrackets(),
+                bracketMatching(),
+                keymap.of([
+                    indentWithTab,
+                    ...closeBracketsKeymap
+                ])
             ],
             parent: document.getElementById("editor")
         });
