@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Mini Online Judge</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f4f4f4;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .top-bar {
+            margin-bottom: 15px;
+        }
+
+        select, button {
+            padding: 8px 12px;
+            font-size: 15px;
+        }
+
+        button {
+            cursor: pointer;
+            margin-left: 10px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            font-family: Consolas, monospace;
+            font-size: 14px;
+            padding: 10px;
+            resize: vertical;
+        }
+
+        #code {
+            height: 430px;
+        }
+
+        #input, #answer {
+            height: 120px;
+        }
+
+        pre {
+            background: #222;
+            color: #eee;
+            padding: 15px;
+            min-height: 180px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Mini Online Judge</h1>
+
+    <div class="top-bar">
+        <label>Language:</label>
+        <select id="language" onchange="changeTemplate()">
+            <option value="cpp">C++17</option>
+            <option value="c">C11</option>
+        </select>
+
+        <button onclick="runCode()">Run</button>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <h2>Code</h2>
+            <textarea id="code"></textarea>
+        </div>
+
+        <div class="panel">
+            <h2>Input</h2>
+            <textarea id="input">3 5</textarea>
+
+            <h2>Expected Output</h2>
+            <textarea id="answer">8</textarea>
+
+            <h2>Result</h2>
+            <div class="status" id="status">Status: Not Run</div>
+            <pre id="output">Press Run...</pre>
+        </div>
+    </div>
+
+    <script>
+        const cppTemplate = `#include <iostream>
+using namespace std;
+
+int main() {
+    int a, b;
+    cin >> a >> b;
+    cout << a + b << endl;
+    return 0;
+}
+`;
+
+        const cTemplate = `#include <stdio.h>
+
+int main() {
+    int a, b;
+    scanf("%d %d", &a, &b);
+    printf("%d\\n", a + b);
+    return 0;
+}
+`;
+
+        document.getElementById("code").value = cppTemplate;
+
+        function changeTemplate() {
+            const language = document.getElementById("language").value;
+
+            if (language === "cpp") {
+                document.getElementById("code").value = cppTemplate;
+            } else {
+                document.getElementById("code").value = cTemplate;
+            }
+        }
+
+        async function runCode() {
+            const code = document.getElementById("code").value;
+            const input = document.getElementById("input").value;
+            const answer = document.getElementById("answer").value;
+            const language = document.getElementById("language").value;
+
+            const statusBox = document.getElementById("status");
+            const outputBox = document.getElementById("output");
+
+            statusBox.textContent = "Status: Running...";
+            outputBox.textContent = "Running...";
+
+            try {
+                const response = await fetch("/api/run", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        code,
+                        input,
+                        answer,
+                        language
+                    })
+                });
+
+                const result = await response.json();
+
+                statusBox.textContent = `Status: ${result.status} | Time: ${result.timeMs || 0} ms`;
+
+                let text = "";
+
+                if (result.message) {
+                    text += result.message + "\\n";
+                }
+
+                if (result.stdout) {
+                    text += "===== stdout =====\\n";
+                    text += result.stdout + "\\n";
+                }
+
+                if (result.stderr) {
+                    text += "===== stderr =====\\n";
+                    text += result.stderr + "\\n";
+                }
+
+                if (!text.trim()) {
+                    text = "No output.";
+                }
+
+                outputBox.textContent = text;
+            } catch (err) {
+                statusBox.textContent = "Status: Request Failed";
+                outputBox.textContent = err.toString();
+            }
+        }
+    </script>
+</body>
+</html>
