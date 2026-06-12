@@ -50,8 +50,18 @@
             resize: vertical;
         }
 
-        #code {
+        #editor {
             height: 430px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+        }
+
+        .cm-editor {
+            height: 100%;
+        }
+
+        .cm-scroller {
+            font-family: Consolas, monospace;
         }
 
         #input, #answer {
@@ -90,7 +100,7 @@
     <div class="container">
         <div class="panel">
             <h2>Code</h2>
-            <textarea id="code"></textarea>
+            <div id="editor"></div>
         </div>
 
         <div class="panel">
@@ -106,7 +116,12 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { basicSetup } from "https://esm.sh/codemirror";
+        import { EditorView, keymap } from "https://esm.sh/@codemirror/view";
+        import { cpp } from "https://esm.sh/@codemirror/lang-cpp";
+        import { indentWithTab } from "https://esm.sh/@codemirror/commands";
+
         const cppTemplate = `#include <iostream>
 using namespace std;
 
@@ -128,38 +143,33 @@ int main() {
 }
 `;
 
-        const codeArea = document.getElementById("code");
-        codeArea.value = cppTemplate;
-
-        codeArea.addEventListener("keydown", function (e) {
-            if (e.key === "Tab") {
-                e.preventDefault();
-
-                const start = this.selectionStart;
-                const end = this.selectionEnd;
-                const indent = "    "; // 4 spaces
-
-                this.value =
-                    this.value.substring(0, start) +
-                    indent +
-                    this.value.substring(end);
-
-                this.selectionStart = this.selectionEnd = start + indent.length;
-            }
+        const editor = new EditorView({
+            doc: cppTemplate,
+            extensions: [
+                basicSetup,
+                keymap.of([indentWithTab]),
+                cpp()
+            ],
+            parent: document.getElementById("editor")
         });
 
-        function changeTemplate() {
+        window.changeTemplate = function () {
             const language = document.getElementById("language").value;
+            const template = language === "cpp" ? cppTemplate : cTemplate;
 
-            if (language === "cpp") {
-                codeArea.value = cppTemplate;
-            } else {
-                codeArea.value = cTemplate;
-            }
-        }
+            editor.dispatch({
+                changes: {
+                    from: 0,
+                    to: editor.state.doc.length,
+                    insert: template
+                }
+            });
 
-        async function runCode() {
-            const code = codeArea.value;
+            editor.focus();
+        };
+
+        window.runCode = async function () {
+            const code = editor.state.doc.toString();
             const input = document.getElementById("input").value;
             const answer = document.getElementById("answer").value;
             const language = document.getElementById("language").value;
@@ -213,7 +223,7 @@ int main() {
                 statusBox.textContent = "Status: Request Failed";
                 outputBox.textContent = err.toString();
             }
-        }
+        };
     </script>
 </body>
 </html>
