@@ -128,20 +128,38 @@ int main() {
 }
 `;
 
-        document.getElementById("code").value = cppTemplate;
+        const codeArea = document.getElementById("code");
+        codeArea.value = cppTemplate;
+
+        codeArea.addEventListener("keydown", function (e) {
+            if (e.key === "Tab") {
+                e.preventDefault();
+
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                const indent = "    "; // 4 spaces
+
+                this.value =
+                    this.value.substring(0, start) +
+                    indent +
+                    this.value.substring(end);
+
+                this.selectionStart = this.selectionEnd = start + indent.length;
+            }
+        });
 
         function changeTemplate() {
             const language = document.getElementById("language").value;
 
             if (language === "cpp") {
-                document.getElementById("code").value = cppTemplate;
+                codeArea.value = cppTemplate;
             } else {
-                document.getElementById("code").value = cTemplate;
+                codeArea.value = cTemplate;
             }
         }
 
         async function runCode() {
-            const code = document.getElementById("code").value;
+            const code = codeArea.value;
             const input = document.getElementById("input").value;
             const answer = document.getElementById("answer").value;
             const language = document.getElementById("language").value;
@@ -173,17 +191,17 @@ int main() {
                 let text = "";
 
                 if (result.message) {
-                    text += result.message + "\\n";
+                    text += result.message + "\n";
                 }
 
                 if (result.stdout) {
-                    text += "===== stdout =====\\n";
-                    text += result.stdout + "\\n";
+                    text += "===== stdout =====\n";
+                    text += result.stdout + "\n";
                 }
 
                 if (result.stderr) {
-                    text += "===== stderr =====\\n";
-                    text += result.stderr + "\\n";
+                    text += "===== stderr =====\n";
+                    text += result.stderr + "\n";
                 }
 
                 if (!text.trim()) {
