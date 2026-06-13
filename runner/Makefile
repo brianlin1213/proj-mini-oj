@@ -36,14 +36,18 @@ check: test
 	@echo "====== Compare Result ======"
 	@if [ ! -s $(ANSWER) ]; then \
 		echo "[NO ANSWER] No answer.txt provided, only showing program output."; \
-	elif diff -u $(OUTPUT) $(ANSWER) > diff_result.txt; then \
-		echo "[AC] Accepted"; \
 	else \
-		echo "[WA] Wrong Answer"; \
-		cat diff_result.txt; \
+		awk '{ sub(/[[:space:]]+$$/, ""); lines[NR]=$$0 } END { n=NR; while (n>0 && lines[n]=="") n--; for (i=1; i<=n; i++) print lines[i] }' $(OUTPUT) > output_norm.txt; \
+		awk '{ sub(/[[:space:]]+$$/, ""); lines[NR]=$$0 } END { n=NR; while (n>0 && lines[n]=="") n--; for (i=1; i<=n; i++) print lines[i] }' $(ANSWER) > answer_norm.txt; \
+		if diff -u output_norm.txt answer_norm.txt > diff_result.txt; then \
+			echo "[AC] Accepted"; \
+		else \
+			echo "[WA] Wrong Answer"; \
+			cat diff_result.txt; \
+		fi \
 	fi
 
 clean:
-	rm -f $(TARGET) $(OUTPUT) diff_result.txt
+	rm -f $(TARGET) $(OUTPUT) diff_result.txt output_norm.txt answer_norm.txt
 
 .PHONY: all run test check clean
