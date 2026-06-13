@@ -121,7 +121,7 @@
         import { EditorView, keymap } from "https://esm.sh/@codemirror/view";
         import { cpp } from "https://esm.sh/@codemirror/lang-cpp";
         import { indentWithTab } from "https://esm.sh/@codemirror/commands";
-        import { bracketMatching } from "https://esm.sh/@codemirror/language";
+        import { bracketMatching, indentUnit } from "https://esm.sh/@codemirror/language";
         import { closeBrackets, closeBracketsKeymap } from "https://esm.sh/@codemirror/autocomplete";
 
         const cppTemplate = `#include <iostream>
@@ -150,6 +150,7 @@ int main() {
             extensions: [
                 basicSetup,
                 cpp(),
+                indentUnit.of("    "), // 4 spaces
                 closeBrackets(),
                 bracketMatching(),
                 keymap.of([
@@ -203,7 +204,8 @@ int main() {
 
                 const result = await response.json();
 
-                statusBox.textContent = `Status: ${result.status} | Time: ${result.timeMs || 0} ms`;
+                statusBox.textContent =
+                    `Status: ${result.status} | Time: ${result.timeMs || 0} ms`;
 
                 let text = "";
 
