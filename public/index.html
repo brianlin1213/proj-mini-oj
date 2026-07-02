@@ -21,6 +21,32 @@
             color: #f9fafb;
         }
 
+        .version-badge {
+            display: inline-block;
+            margin-left: 12px;
+            padding: 4px 10px;
+            font-size: 14px;
+            border-radius: 999px;
+            background: #374151;
+            color: #e5e7eb;
+            vertical-align: middle;
+        }
+
+        .version-badge.develop {
+            background: #7c2d12;
+            color: #fed7aa;
+        }
+
+        .version-badge.release {
+            background: #064e3b;
+            color: #a7f3d0;
+        }
+
+        .version-badge.local {
+            background: #374151;
+            color: #e5e7eb;
+        }
+
         .top-bar {
             margin-bottom: 15px;
         }
@@ -148,7 +174,10 @@
 </head>
 
 <body>
-    <h1>Mini Online Judge</h1>
+    <h1>
+        Mini Online Judge
+        <span id="versionBadge" class="version-badge local">Loading...</span>
+    </h1>
 
     <div class="top-bar">
         <label>Language:</label>
@@ -260,7 +289,7 @@ print(a + b)
             extensions: [
                 basicSetup,
                 languageMode.of(languageExtensions.cpp),
-                indentUnit.of("    "), // 4 spaces
+                indentUnit.of("    "),
                 closeBrackets(),
                 bracketMatching(),
                 keymap.of([
@@ -270,6 +299,33 @@ print(a + b)
             ],
             parent: document.getElementById("editor")
         });
+
+        async function loadAppInfo() {
+            const badge = document.getElementById("versionBadge");
+
+            try {
+                const response = await fetch("/api/app-info");
+                const info = await response.json();
+
+                badge.textContent = `${info.appLabel} :${info.port}`;
+
+                badge.classList.remove("develop", "release", "local");
+
+                if (info.appEnv === "develop") {
+                    badge.classList.add("develop");
+                } else if (info.appEnv === "release") {
+                    badge.classList.add("release");
+                } else {
+                    badge.classList.add("local");
+                }
+            } catch (err) {
+                badge.textContent = "Unknown Version";
+                badge.classList.remove("develop", "release");
+                badge.classList.add("local");
+            }
+        }
+
+        loadAppInfo();
 
         window.changeTemplate = function () {
             const language = document.getElementById("language").value;
@@ -378,7 +434,6 @@ print(a + b)
                 outputBox.textContent = err.toString();
             }
         };
-
 
         window.runCode = async function () {
             const code = editor.state.doc.toString();

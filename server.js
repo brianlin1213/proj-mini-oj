@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const fs = require("fs");
 const os = require("os");
@@ -5,10 +7,21 @@ const path = require("path");
 const { spawn } = require("child_process");
 
 const app = express();
-const PORT = 3001;
+
+const PORT = process.env.PORT || 3000;
+const APP_ENV = process.env.APP_ENV || "local";
+const APP_LABEL = process.env.APP_LABEL || "Mini OJ";
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
+
+app.get("/api/app-info", (req, res) => {
+    res.json({
+        appEnv: APP_ENV,
+        appLabel: APP_LABEL,
+        port: PORT
+    });
+});
 
 const DATA_DIR = path.join(__dirname, "data");
 const PROBLEMS_DB = path.join(DATA_DIR, "problems.json");
@@ -262,5 +275,5 @@ app.get("/api/problems", (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Mini OJ running at http://0.0.0.0:${PORT}`);
+    console.log(`${APP_LABEL} running at http://0.0.0.0:${PORT}`);
 });
