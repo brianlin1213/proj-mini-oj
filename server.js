@@ -10,18 +10,10 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 const APP_ENV = process.env.APP_ENV || "local";
-const APP_LABEL = process.env.APP_LABEL || "Mini OJ";
+const APP_LABEL = process.env.APP_LABEL || "Local Version";
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
-
-app.get("/api/app-info", (req, res) => {
-    res.json({
-        appEnv: APP_ENV,
-        appLabel: APP_LABEL,
-        port: PORT
-    });
-});
 
 const DATA_DIR = path.join(__dirname, "data");
 const PROBLEMS_DB = path.join(DATA_DIR, "problems.json");
@@ -128,6 +120,14 @@ function detectStatus(result) {
 
     return "DONE";
 }
+
+app.get("/api/app-info", (req, res) => {
+    res.json({
+        appEnv: APP_ENV,
+        appLabel: APP_LABEL,
+        port: PORT
+    });
+});
 
 app.post("/api/run", async (req, res) => {
     const { code, input, answer, language } = req.body;
@@ -271,6 +271,27 @@ app.get("/api/problems", (req, res) => {
     res.json({
         ok: true,
         problems: summary
+    });
+});
+
+app.get("/api/problems/:problemId", (req, res) => {
+    const problems = readProblems();
+    const problemId = req.params.problemId;
+
+    const problem = problems.find(
+        (p) => p.problemId === problemId
+    );
+
+    if (!problem) {
+        return res.status(404).json({
+            ok: false,
+            message: "Problem not found."
+        });
+    }
+
+    res.json({
+        ok: true,
+        problem
     });
 });
 

@@ -170,6 +170,63 @@
         #problemStatement {
             height: 120px;
         }
+
+        .history-panel {
+            background: #1f2937;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #374151;
+            margin-bottom: 20px;
+        }
+
+        .history-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .history-header h2 {
+            margin: 0;
+        }
+
+        .problem-list {
+            margin-top: 12px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .problem-item {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 6px;
+        }
+
+        .problem-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .problem-name {
+            font-weight: bold;
+            color: #f9fafb;
+        }
+
+        .problem-meta-small {
+            font-size: 13px;
+            color: #9ca3af;
+        }
+
+        .empty-history {
+            color: #9ca3af;
+            font-style: italic;
+        }
     </style>
 </head>
 
@@ -207,6 +264,17 @@
     <div class="statement-panel">
         <h2>Problem Statement</h2>
         <textarea id="problemStatement" placeholder="Write or paste the problem statement here..."></textarea>
+    </div>
+
+    <div class="history-panel">
+        <div class="history-header">
+            <h2>Saved Problems</h2>
+            <button onclick="loadProblemList()">Refresh</button>
+        </div>
+
+        <div id="problemList" class="problem-list">
+            <div class="empty-history">Loading saved problems...</div>
+        </div>
     </div>
 
     <div class="container">
@@ -325,7 +393,127 @@ print(a + b)
             }
         }
 
+        window.loadProblemList = async function () {
+            const problemList = document.getElementById("problemList");
+
+            problemList.innerHTML = `<div class="empty-history">Loading...</div>`;
+
+            try {
+                const response = await fetch("/api/problems");
+                const result = await response.json();
+
+                if (!result.ok) {
+                    problemList.innerHTML =
+                        `<div class="empty-history">Failed to load problems.</div>`;
+                    return;
+                }
+
+                if (!result.problems || result.problems.length === 0) {
+                    problemList.innerHTML =
+                        `<div class="empty-history">No saved problems yet.</div>`;
+                    return;
+                }
+
+                problemList.innerHTML = "";
+
+                result.problems.forEach((problem) => {
+                    const item = document.createElement("div");
+                    item.className = "problem-item";
+
+                    const updatedAt = problem.updatedAt
+                        ? new Date(problem.updatedAt).toLocaleString()
+                        : "Unknown time";
+
+                    const encodedProblemId = encodeURIComponent(problem.problemId);
+
+                    item.innerHTML = `
+                        <div class="problem-info">
+                            <div class="problem-name">
+                                ${escapeHtml(problem.problemId)} - ${escapeHtml(problem.problemTitle)}
+                            </div>
+                            <div class="problem-meta-small">
+                                Language: ${escapeHtml(problem.language || "cpp")} |
+                                Updated: ${escapeHtml(updatedAt)}
+                            </div>
+                        </div>
+
+                        <button onclick="loadProblem('${encodedProblemId}')">
+                            Load
+                        </button>
+                    `;
+
+                    problemList.appendChild(item);
+                });
+            } catch (err) {
+                problemList.innerHTML =
+                    `<div class="empty-history">${escapeHtml(err.toString())}</div>`;
+            }
+        };
+
+        window.loadProblem = async function (encodedProblemId) {
+            const problemId = decodeURIComponent(encodedProblemId);
+
+            const statusBox = document.getElementById("status");
+            const outputBox = document.getElementById("output");
+
+            statusBox.textContent = "Status: Loading Problem...";
+            outputBox.textContent = `Loading problem ${problemId}...`;
+
+            try {
+                const response = await fetch(`/api/problems/${encodedProblemId}`);
+                const result = await response.json();
+
+                if (!result.ok) {
+                    statusBox.textContent = "Status: Load Failed";
+                    outputBox.textContent = result.message || "Problem not found.";
+                    return;
+                }
+
+                const problem = result.problem;
+                const language = problem.language || "cpp";
+
+                document.getElementById("problemId").value = problem.problemId || "";
+                document.getElementById("problemTitle").value = problem.problemTitle || "";
+                document.getElementById("problemStatement").value = problem.problemStatement || "";
+                document.getElementById("input").value = problem.input || "";
+                document.getElementById("answer").value = problem.answer || "";
+                document.getElementById("language").value = language;
+
+                editor.dispatch({
+                    changes: {
+                        from: 0,
+                        to: editor.state.doc.length,
+                        insert: problem.code || templates[language] || templates.cpp
+                    },
+                    effects: languageMode.reconfigure(
+                        languageExtensions[language] || languageExtensions.cpp
+                    )
+                });
+
+                statusBox.textContent = "Status: Problem Loaded";
+                outputBox.textContent =
+                    `Loaded successfully\n` +
+                    `Problem ID: ${problem.problemId}\n` +
+                    `Title: ${problem.problemTitle}\n`;
+
+                editor.focus();
+            } catch (err) {
+                statusBox.textContent = "Status: Load Failed";
+                outputBox.textContent = err.toString();
+            }
+        };
+
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#039;");
+        }
+
         loadAppInfo();
+        loadProblemList();
 
         window.changeTemplate = function () {
             const language = document.getElementById("language").value;
@@ -429,6 +617,8 @@ print(a + b)
                     `Problem ID: ${result.problem.problemId}\n` +
                     `Title: ${result.problem.problemTitle}\n` +
                     `Updated At: ${result.problem.updatedAt}\n`;
+
+                loadProblemList();
             } catch (err) {
                 statusBox.textContent = "Status: Save Failed";
                 outputBox.textContent = err.toString();
