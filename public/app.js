@@ -7,6 +7,11 @@ import { indentWithTab } from "https://esm.sh/@codemirror/commands";
 import { bracketMatching, indentUnit } from "https://esm.sh/@codemirror/language";
 import { closeBrackets, closeBracketsKeymap } from "https://esm.sh/@codemirror/autocomplete";
 
+import {
+    parseMarkdownProblem,
+    parseNthuProblem
+} from "./importers.js";
+
 const cppTemplate = `#include <bits/stdc++.h>
 using namespace std;
 
@@ -84,146 +89,6 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
-function slugifyTitle(title) {
-    return title
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+/, "")
-        .replace(/-+$/, "");
-}
-
-function normalizeCopiedProblemText(text) {
-    return text
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .replace(/\u00a0/g, " ")
-        .replace(/[ \t]+\n/g, "\n")
-        .trim();
-}
-
-function findSectionIndex(lines, sectionName) {
-    const target = sectionName.toLowerCase();
-
-    return lines.findIndex((line) => {
-        const normalized = line.trim().toLowerCase();
-        return normalized === target || normalized.startsWith(target + " ");
-    });
-}
-
-function cleanSectionText(text) {
-    return text
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-}
-
-function parseNthuProblem(rawText) {
-    const source = "nthu";
-    const text = normalizeCopiedProblemText(rawText);
-
-    if (!text) {
-        throw new Error("No problem text provided.");
-    }
-
-    const lines = text.split("\n");
-    const titleLine = lines.find((line) => line.trim().length > 0);
-
-    if (!titleLine) {
-        throw new Error("Cannot find problem title.");
-    }
-
-    const title = titleLine.trim();
-
-    const descriptionIndex = findSectionIndex(lines, "Description");
-    const inputIndex = findSectionIndex(lines, "Input");
-    const constraintsIndex = findSectionIndex(lines, "Constraints");
-    const outputIndex = findSectionIndex(lines, "Output");
-    const sampleInputIndex = lines.findIndex((line) =>
-        line.trim().toLowerCase().startsWith("sample input")
-    );
-    const sampleOutputIndex = lines.findIndex((line) =>
-        line.trim().toLowerCase().startsWith("sample output")
-    );
-    const sourceIndex = findSectionIndex(lines, "Source");
-
-    if (descriptionIndex < 0) {
-        throw new Error("Cannot find Description section.");
-    }
-
-    if (inputIndex < 0) {
-        throw new Error("Cannot find Input section.");
-    }
-
-    if (outputIndex < 0) {
-        throw new Error("Cannot find Output section.");
-    }
-
-    const statementEndCandidates = [
-        sampleInputIndex,
-        sourceIndex
-    ].filter((index) => index >= 0);
-
-    const statementEnd = statementEndCandidates.length > 0
-        ? Math.min(...statementEndCandidates)
-        : lines.length;
-
-    const statementLines = lines.slice(descriptionIndex, statementEnd);
-    const statement = cleanSectionText(statementLines.join("\n"));
-
-    let sampleInput = "";
-    let sampleOutput = "";
-
-    if (sampleInputIndex >= 0) {
-        const inputEndCandidates = [
-            sampleOutputIndex,
-            sourceIndex
-        ].filter((index) => index >= 0 && index > sampleInputIndex);
-
-        const inputEnd = inputEndCandidates.length > 0
-            ? Math.min(...inputEndCandidates)
-            : lines.length;
-
-        sampleInput = cleanSectionText(
-            lines.slice(sampleInputIndex + 1, inputEnd).join("\n")
-        );
-    }
-
-    if (sampleOutputIndex >= 0) {
-        const outputEndCandidates = [
-            sourceIndex
-        ].filter((index) => index >= 0 && index > sampleOutputIndex);
-
-        const outputEnd = outputEndCandidates.length > 0
-            ? Math.min(...outputEndCandidates)
-            : lines.length;
-
-        sampleOutput = cleanSectionText(
-            lines.slice(sampleOutputIndex + 1, outputEnd).join("\n")
-        );
-    }
-
-    const titleSlug = slugifyTitle(title);
-    const problemId = `${source}-${titleSlug}`;
-
-    return {
-        problemId,
-        problemTitle: title,
-        problemStatement: statement,
-        sampleInput,
-        sampleOutput,
-        source,
-        detectedSections: {
-            descriptionIndex,
-            inputIndex,
-            constraintsIndex,
-            outputIndex,
-            sampleInputIndex,
-            sampleOutputIndex,
-            sourceIndex
-        }
-    };
-}
-
 function buildSaveNotification(result) {
     const problem = result.problem || {};
     const action = result.action || "saved";
@@ -285,6 +150,36 @@ async function loadAppInfo() {
     }
 }
 
+function setEditorContent(content, language) {
+    const selectedLanguage = language || defaultLanguage;
+
+    editor.dispatch({
+        changes: {
+            from: 0,
+            to: editor.state.doc.length,
+            insert: content
+        },
+        effects: languageMode.reconfigure(
+            languageExtensions[selectedLanguage] || languageExtensions.cpp
+        )
+    });
+}
+
+function applyImportedProblem(parsed) {
+    loadedProblemId = null;
+
+    const language = parsed.language || defaultLanguage;
+
+    document.getElementById("problemId").value = parsed.problemId;
+    document.getElementById("problemTitle").value = parsed.problemTitle;
+    document.getElementById("problemStatement").value = parsed.problemStatement;
+    document.getElementById("input").value = parsed.sampleInput;
+    document.getElementById("answer").value = parsed.sampleOutput;
+    document.getElementById("language").value = language;
+
+    setEditorContent(parsed.code || "", language);
+}
+
 window.openImportModal = function () {
     document.getElementById("importModal").classList.add("show");
     document.getElementById("rawProblemText").focus();
@@ -309,29 +204,15 @@ window.importProblemFromText = function () {
     try {
         let parsed;
 
-        if (source === "nthu") {
+        if (source === "markdown") {
+            parsed = parseMarkdownProblem(rawText);
+        } else if (source === "nthu") {
             parsed = parseNthuProblem(rawText);
         } else {
             throw new Error(`Unsupported source: ${source}`);
         }
 
-        loadedProblemId = null;
-
-        document.getElementById("problemId").value = parsed.problemId;
-        document.getElementById("problemTitle").value = parsed.problemTitle;
-        document.getElementById("problemStatement").value = parsed.problemStatement;
-        document.getElementById("input").value = parsed.sampleInput;
-        document.getElementById("answer").value = parsed.sampleOutput;
-        document.getElementById("language").value = defaultLanguage;
-
-        editor.dispatch({
-            changes: {
-                from: 0,
-                to: editor.state.doc.length,
-                insert: ""
-            },
-            effects: languageMode.reconfigure(languageExtensions[defaultLanguage])
-        });
+        applyImportedProblem(parsed);
 
         statusBox.textContent = "Status: Imported";
         outputBox.textContent =
@@ -339,6 +220,7 @@ window.importProblemFromText = function () {
             `Source: ${parsed.source}\n` +
             `Problem ID: ${parsed.problemId}\n` +
             `Title: ${parsed.problemTitle}\n` +
+            `Language: ${parsed.language || "cpp"}\n` +
             `Sample input length: ${parsed.sampleInput.length}\n` +
             `Sample output length: ${parsed.sampleOutput.length}\n` +
             `Code editor cleared.\n`;
@@ -347,6 +229,7 @@ window.importProblemFromText = function () {
 
         notify(
             `Imported problem.\n\n` +
+            `Source: ${parsed.source}\n` +
             `Problem ID: ${parsed.problemId}\n` +
             `Title: ${parsed.problemTitle}\n\n` +
             `Code editor has been cleared.`
@@ -451,16 +334,10 @@ window.loadProblem = async function (encodedProblemId) {
         document.getElementById("answer").value = problem.answer || "";
         document.getElementById("language").value = language;
 
-        editor.dispatch({
-            changes: {
-                from: 0,
-                to: editor.state.doc.length,
-                insert: problem.code || templates[language] || templates.cpp
-            },
-            effects: languageMode.reconfigure(
-                languageExtensions[language] || languageExtensions.cpp
-            )
-        });
+        setEditorContent(
+            problem.code || templates[language] || templates.cpp,
+            language
+        );
 
         statusBox.textContent = "Status: Problem Loaded";
         outputBox.textContent =
@@ -480,15 +357,7 @@ window.changeTemplate = function () {
     const language = document.getElementById("language").value;
     const template = templates[language];
 
-    editor.dispatch({
-        changes: {
-            from: 0,
-            to: editor.state.doc.length,
-            insert: template
-        },
-        effects: languageMode.reconfigure(languageExtensions[language])
-    });
-
+    setEditorContent(template, language);
     editor.focus();
 };
 
@@ -498,14 +367,7 @@ window.resetPage = function () {
     languageSelect.value = defaultLanguage;
     loadedProblemId = null;
 
-    editor.dispatch({
-        changes: {
-            from: 0,
-            to: editor.state.doc.length,
-            insert: templates[defaultLanguage]
-        },
-        effects: languageMode.reconfigure(languageExtensions[defaultLanguage])
-    });
+    setEditorContent(templates[defaultLanguage], defaultLanguage);
 
     document.getElementById("problemId").value = defaultProblemId;
     document.getElementById("problemTitle").value = defaultProblemTitle;

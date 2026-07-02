@@ -287,6 +287,7 @@
             color: #9ca3af;
             font-size: 13px;
             margin-bottom: 8px;
+            line-height: 1.5;
         }
     </style>
 </head>
@@ -314,7 +315,7 @@
     <div class="problem-meta">
         <div>
             <label>Problem ID</label>
-            <input id="problemId" type="text" placeholder="e.g. mergesort">
+            <input id="problemId" type="text" placeholder="e.g. nthu-merge-sort-problem">
         </div>
 
         <div>
@@ -368,15 +369,17 @@
             <div class="modal-row">
                 <label>Source:</label>
                 <select id="importSource">
-                    <option value="nthu">NTHU AdaLab</option>
+                    <option value="markdown">Mini OJ Markdown</option>
+                    <option value="nthu">NTHU AdaLab Raw Text</option>
                 </select>
             </div>
 
             <div class="hint">
-                Copy the whole problem text from NTHU AdaLab, paste it here, then press Load.
+                Markdown mode expects frontmatter like:<br>
+                <code>source</code>, <code>id</code>, <code>title</code>, <code>language</code>, then Markdown sections and fenced sample input/output.
             </div>
 
-            <textarea id="rawProblemText" placeholder="Paste problem text here..."></textarea>
+            <textarea id="rawProblemText" placeholder="Paste Markdown or raw problem text here..."></textarea>
 
             <div class="modal-actions">
                 <button onclick="clearImportText()">Clear</button>
