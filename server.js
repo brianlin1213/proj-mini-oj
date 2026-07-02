@@ -198,6 +198,7 @@ app.post("/api/run", async (req, res) => {
 
 app.post("/api/problems/save", (req, res) => {
     const {
+        originalProblemId,
         problemId,
         problemTitle,
         problemStatement,
@@ -223,11 +224,49 @@ app.post("/api/problems/save", (req, res) => {
 
     const problems = readProblems();
     const now = new Date().toISOString();
-    const normalizedId = problemId.trim();
 
-    const existingIndex = problems.findIndex(
-        (p) => p.problemId === normalizedId
-    );
+    const normalizedId = problemId.trim();
+    const normalizedOriginalId =
+        originalProblemId && originalProblemId.trim()
+            ? originalProblemId.trim()
+            : null;
+
+    let existingIndex = -1;
+
+    if (normalizedOriginalId) {
+        existingIndex = problems.findIndex(
+            (p) => p.problemId === normalizedOriginalId
+        );
+
+        if (existingIndex < 0) {
+            return res.status(404).json({
+                ok: false,
+                message: `Original problem "${normalizedOriginalId}" was not found. Please refresh the problem list.`
+            });
+        }
+
+        const conflictIndex = problems.findIndex(
+            (p) => p.problemId === normalizedId
+        );
+
+        if (conflictIndex >= 0 && conflictIndex !== existingIndex) {
+            return res.status(409).json({
+                ok: false,
+                message: `Problem ID "${normalizedId}" already exists. Rename cancelled to avoid overwriting another problem.`
+            });
+        }
+    } else {
+        existingIndex = problems.findIndex(
+            (p) => p.problemId === normalizedId
+        );
+
+        if (existingIndex >= 0) {
+            return res.status(409).json({
+                ok: false,
+                message: `Problem ID "${normalizedId}" already exists. Please load it from history before editing, or use a different Problem ID.`
+            });
+        }
+    }
 
     const record = {
         problemId: normalizedId,
