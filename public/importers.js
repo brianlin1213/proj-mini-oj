@@ -104,13 +104,24 @@ function findNextMarkdownHeadingIndex(lines, startIndex) {
 }
 
 function extractFirstFence(text) {
-    const fenceMatch = text.match(/```(?:\w+)?\n([\s\S]*?)```/);
+    const fenceMatch = text.match(/(?:^|\n)\s*(```|~~~)[^\n]*\n([\s\S]*?)\n\s*\1/);
 
     if (!fenceMatch) {
         return "";
     }
 
-    return fenceMatch[1].trim();
+    return fenceMatch[2].trim();
+}
+
+function stripLooseFenceLines(text) {
+    return text
+        .split("\n")
+        .filter((line) => {
+            const trimmed = line.trim();
+            return !trimmed.startsWith("```") && !trimmed.startsWith("~~~");
+        })
+        .join("\n")
+        .trim();
 }
 
 function extractMarkdownSample(lines, headingIndex) {
@@ -127,7 +138,7 @@ function extractMarkdownSample(lines, headingIndex) {
         return fenced;
     }
 
-    return sectionText.trim();
+    return stripLooseFenceLines(sectionText);
 }
 
 function removeMarkdownSampleSections(body) {
