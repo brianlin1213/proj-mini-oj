@@ -94,17 +94,22 @@ app.post("/api/run", async (req, res) => {
 
     const lang = language || "cpp";
 
-    if (lang !== "cpp" && lang !== "c") {
+    if (lang !== "cpp" && lang !== "c" && lang !== "python") {
         return res.json({
             status: "ERROR",
-            message: "Only C and C++ are supported."
+            message: "Only C, C++, and Python are supported."
         });
     }
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mini-oj-"));
 
     try {
-        const sourceFile = lang === "cpp" ? "main.cpp" : "main.c";
+        const sourceFiles = {
+            cpp: "main.cpp",
+            c: "main.c",
+            python: "main.py"
+        };
+        const sourceFile = sourceFiles[lang];
 
         fs.writeFileSync(path.join(tempDir, sourceFile), code);
         fs.writeFileSync(path.join(tempDir, "input.txt"), input || "");

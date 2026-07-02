@@ -1,6 +1,6 @@
 # Mini OJ 專案說明與流程圖
 
-這個專案是一個支援 C / C++ 的迷你 Online Judge。使用者在瀏覽器輸入程式碼、測資與預期輸出後，前端會呼叫後端 API；後端建立暫存執行環境，透過 `runner/Makefile` 編譯、執行並比對結果，最後把判題狀態回傳給前端。
+這個專案是一個支援 C / C++ / Python 的迷你 Online Judge。使用者在瀏覽器輸入程式碼、測資與預期輸出後，前端會呼叫後端 API；後端建立暫存執行環境，透過 `runner/Makefile` 編譯或執行程式並比對結果，最後把判題狀態回傳給前端。
 
 ## 1. 專案檔案在做什麼
 
@@ -10,7 +10,7 @@ flowchart TD
     Lock[package-lock.json<br/>鎖定實際安裝的 npm 套件版本]
     Server[server.js<br/>啟動 Express 服務、提供靜態網頁、接收判題 API]
     Public[public/index.html<br/>前端畫面、程式碼編輯器、輸入測資、送出 Run]
-    Makefile[runner/Makefile<br/>負責編譯 C/C++、執行程式、比對答案]
+    Makefile[runner/Makefile<br/>負責編譯 C/C++、執行 Python、比對答案]
     NodeModules[node_modules/<br/>npm 安裝的第三方套件]
 
     Package --> NodeModules
@@ -54,9 +54,9 @@ flowchart TD
 - 使用 `express.static("public")` 提供前端網頁
 - 提供 `/api/run` API 給前端呼叫
 - 檢查使用者送來的程式碼是否為空
-- 檢查語言是否是 `c` 或 `cpp`
+- 檢查語言是否是 `c`、`cpp` 或 `python`
 - 建立暫存資料夾
-- 把使用者的程式碼寫成 `main.c` 或 `main.cpp`
+- 把使用者的程式碼寫成 `main.c`、`main.cpp` 或 `main.py`
 - 把輸入資料寫成 `input.txt`
 - 把預期答案寫成 `answer.txt`
 - 複製 `runner/Makefile` 到暫存資料夾
@@ -75,7 +75,7 @@ flowchart TD
 
 - HTML：畫出標題、語言選單、Run 按鈕、程式碼區、Input、Expected Output、Result
 - CSS：設定深色背景、雙欄版面、按鈕、文字區塊、結果區塊的樣式
-- JavaScript：建立 CodeMirror 編輯器、切換 C/C++ 範例模板、送出程式碼到後端
+- JavaScript：建立 CodeMirror 編輯器、切換 C/C++/Python 範例模板、送出程式碼到後端
 
 使用者按下 `Run` 時，前端會把下面資料送到 `/api/run`：
 
@@ -92,11 +92,12 @@ flowchart TD
 
 `runner/Makefile` 是真正負責「編譯、執行、比對答案」的檔案。
 
-它會先判斷暫存資料夾裡有沒有 `main.c` 或 `main.cpp`：
+它會先判斷暫存資料夾裡有沒有 `main.c`、`main.cpp` 或 `main.py`：
 
 - 如果有 `main.c`，就用 `gcc` 和 C11 標準編譯
 - 如果有 `main.cpp`，就用 `g++` 和 C++17 標準編譯
-- 如果兩個都沒有，就報錯
+- 如果有 `main.py`，就不編譯，直接用 `python3 main.py` 執行
+- 如果三種檔案都沒有，就報錯
 
 它的主要 target：
 
@@ -137,7 +138,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[開啟 Mini Online Judge 頁面] --> B[選擇語言<br/>C++17 或 C11]
+    A[開啟 Mini Online Judge 頁面] --> B[選擇語言<br/>C++17、C11 或 Python 3]
     B --> C[CodeMirror 載入對應範例模板]
     C --> D[輸入或修改程式碼]
     D --> E[輸入 Input]
@@ -155,10 +156,10 @@ flowchart TD
 flowchart TD
     A[POST /api/run] --> B{code 是否為空?}
     B -->|是| C[回傳 ERROR<br/>No code provided]
-    B -->|否| D{language 是否為 c/cpp?}
-    D -->|否| E[回傳 ERROR<br/>Only C and C++ are supported]
+    B -->|否| D{language 是否為 c/cpp/python?}
+    D -->|否| E[回傳 ERROR<br/>Only C, C++, and Python are supported]
     D -->|是| F[建立暫存資料夾]
-    F --> G[寫入 main.c 或 main.cpp]
+    F --> G[寫入 main.c、main.cpp 或 main.py]
     G --> H[寫入 input.txt]
     H --> I[寫入 answer.txt]
     I --> J[複製 runner/Makefile]
@@ -177,17 +178,20 @@ flowchart TD
     C -->|是| D[使用 gcc<br/>-std=c11 -Wall -Wextra]
     C -->|否| E{找到 main.cpp?}
     E -->|是| F[使用 g++<br/>-std=c++17 -Wall -Wextra]
-    E -->|否| G[Makefile 錯誤<br/>No main.c or main.cpp found]
-    D --> H[編譯成 main]
-    F --> H
-    H --> I[執行 ./main<br/>stdin: input.txt<br/>stdout: output.txt]
-    I --> J[印出 Program Output]
-    J --> K{answer.txt 是否非空?}
-    K -->|否| L["[NO ANSWER]<br/>只顯示程式輸出"]
-    K -->|是| M[正規化 output.txt 與 answer.txt<br/>去除行尾空白與尾端空行]
-    M --> N{diff 是否相同?}
-    N -->|是| O["[AC] Accepted"]
-    N -->|否| P["[WA] Wrong Answer<br/>顯示 diff"]
+    E -->|否| G{找到 main.py?}
+    G -->|是| H[使用 python3 main.py<br/>不需編譯]
+    G -->|否| I[Makefile 錯誤<br/>No main.c, main.cpp, or main.py found]
+    D --> J[編譯成 main]
+    F --> J
+    H --> K[執行程式<br/>stdin: input.txt<br/>stdout: output.txt]
+    J --> K
+    K --> L[印出 Program Output]
+    L --> M{answer.txt 是否非空?}
+    M -->|否| N["[NO ANSWER]<br/>只顯示程式輸出"]
+    M -->|是| O[正規化 output.txt 與 answer.txt<br/>去除行尾空白與尾端空行]
+    O --> P{diff 是否相同?}
+    P -->|是| Q["[AC] Accepted"]
+    P -->|否| R["[WA] Wrong Answer<br/>顯示 diff"]
 ```
 
 ## 6. 狀態判斷邏輯
@@ -213,5 +217,5 @@ flowchart TD
 | --- | --- |
 | `public/index.html` | 前端畫面、CodeMirror 編輯器、語言模板、呼叫 `/api/run`、顯示結果 |
 | `server.js` | Express 靜態檔案服務、API 驗證、暫存執行環境、執行 `make check`、解析狀態 |
-| `runner/Makefile` | 判斷 C/C++ 原始碼、編譯、執行、輸出比對、產生 `[AC]` / `[WA]` / `[NO ANSWER]` |
+| `runner/Makefile` | 判斷 C/C++/Python 原始碼、編譯或執行、輸出比對、產生 `[AC]` / `[WA]` / `[NO ANSWER]` |
 | `package.json` | Node 專案設定與 `npm start` 啟動腳本 |

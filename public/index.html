@@ -114,6 +114,7 @@
         <select id="language" onchange="changeTemplate()">
             <option value="cpp">C++17</option>
             <option value="c">C11</option>
+            <option value="python">Python 3</option>
         </select>
 
         <button onclick="runCode()">Run</button>
@@ -141,7 +142,9 @@
     <script type="module">
         import { basicSetup } from "https://esm.sh/codemirror";
         import { EditorView, keymap } from "https://esm.sh/@codemirror/view";
+        import { Compartment } from "https://esm.sh/@codemirror/state";
         import { cpp } from "https://esm.sh/@codemirror/lang-cpp";
+        import { python } from "https://esm.sh/@codemirror/lang-python";
         import { indentWithTab } from "https://esm.sh/@codemirror/commands";
         import { bracketMatching, indentUnit } from "https://esm.sh/@codemirror/language";
         import { closeBrackets, closeBracketsKeymap } from "https://esm.sh/@codemirror/autocomplete";
@@ -167,11 +170,29 @@ int main() {
 }
 `;
 
+        const pythonTemplate = `a, b = map(int, input().split())
+print(a + b)
+`;
+
+        const templates = {
+            cpp: cppTemplate,
+            c: cTemplate,
+            python: pythonTemplate
+        };
+
+        const languageExtensions = {
+            cpp: cpp(),
+            c: cpp(),
+            python: python()
+        };
+
+        const languageMode = new Compartment();
+
         const editor = new EditorView({
             doc: cppTemplate,
             extensions: [
                 basicSetup,
-                cpp(),
+                languageMode.of(languageExtensions.cpp),
                 indentUnit.of("    "), // 4 spaces
                 closeBrackets(),
                 bracketMatching(),
@@ -185,14 +206,15 @@ int main() {
 
         window.changeTemplate = function () {
             const language = document.getElementById("language").value;
-            const template = language === "cpp" ? cppTemplate : cTemplate;
+            const template = templates[language];
 
             editor.dispatch({
                 changes: {
                     from: 0,
                     to: editor.state.doc.length,
                     insert: template
-                }
+                },
+                effects: languageMode.reconfigure(languageExtensions[language])
             });
 
             editor.focus();

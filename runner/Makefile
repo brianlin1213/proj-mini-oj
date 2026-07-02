@@ -5,29 +5,40 @@ ANSWER = answer.txt
 
 C_SRC = $(wildcard main.c)
 CPP_SRC = $(wildcard main.cpp)
+PY_SRC = $(wildcard main.py)
 
 ifneq ($(C_SRC),)
 SRC = main.c
 COMPILER = gcc
 FLAGS = -std=c11 -Wall -Wextra
+RUN_CMD = ./$(TARGET)
 else ifneq ($(CPP_SRC),)
 SRC = main.cpp
 COMPILER = g++
 FLAGS = -std=c++17 -Wall -Wextra
+RUN_CMD = ./$(TARGET)
+else ifneq ($(PY_SRC),)
+SRC = main.py
+RUN_CMD = python3 $(SRC)
 else
-$(error No main.c or main.cpp found)
+$(error No main.c, main.cpp, or main.py found)
 endif
 
 all: $(TARGET)
 
+ifneq ($(PY_SRC),)
+$(TARGET): $(SRC)
+	@echo "Python source detected, no compile step needed."
+else
 $(TARGET): $(SRC)
 	$(COMPILER) $(FLAGS) $(SRC) -o $(TARGET)
+endif
 
 run: $(TARGET)
-	./$(TARGET)
+	$(RUN_CMD)
 
 test: $(TARGET)
-	./$(TARGET) < $(INPUT) > $(OUTPUT)
+	$(RUN_CMD) < $(INPUT) > $(OUTPUT)
 	@echo "====== Program Output ======"
 	@cat $(OUTPUT)
 
