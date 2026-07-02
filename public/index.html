@@ -73,6 +73,7 @@
             display: grid;
             grid-template-columns: 1.5fr 1fr;
             gap: 20px;
+            margin-bottom: 20px;
         }
 
         .panel {
@@ -266,17 +267,6 @@
         <textarea id="problemStatement" placeholder="Write or paste the problem statement here..."></textarea>
     </div>
 
-    <div class="history-panel">
-        <div class="history-header">
-            <h2>Saved Problems</h2>
-            <button onclick="loadProblemList()">Refresh</button>
-        </div>
-
-        <div id="problemList" class="problem-list">
-            <div class="empty-history">Loading saved problems...</div>
-        </div>
-    </div>
-
     <div class="container">
         <div class="panel">
             <h2>Code</h2>
@@ -293,6 +283,17 @@
             <h2>Result</h2>
             <div class="status" id="status">Status: Not Run</div>
             <pre id="output">Press Run...</pre>
+        </div>
+    </div>
+
+    <div class="history-panel">
+        <div class="history-header">
+            <h2>Saved Problems</h2>
+            <button onclick="loadProblemList()">Refresh</button>
+        </div>
+
+        <div id="problemList" class="problem-list">
+            <div class="empty-history">Loading saved problems...</div>
         </div>
     </div>
 
