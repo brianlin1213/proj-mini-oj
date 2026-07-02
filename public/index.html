@@ -103,6 +103,47 @@
             margin-bottom: 10px;
             color: #93c5fd;
         }
+
+        .problem-meta {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .problem-meta div {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .problem-meta label {
+            font-weight: bold;
+            color: #e5e7eb;
+        }
+
+        .problem-meta input {
+            padding: 10px;
+            font-size: 14px;
+            font-family: Arial, sans-serif;
+            box-sizing: border-box;
+            background: #111827;
+            color: #e5e7eb;
+            border: 1px solid #374151;
+            border-radius: 6px;
+        }
+
+        .statement-panel {
+            background: #1f2937;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #374151;
+            margin-bottom: 20px;
+        }
+
+        #problemStatement {
+            height: 120px;
+        }
     </style>
 </head>
 
@@ -118,6 +159,25 @@
         </select>
 
         <button onclick="runCode()">Run</button>
+        <button onclick="resetPage()">Reset</button>
+        <button onclick="saveProblem()">Save</button>
+    </div>
+
+    <div class="problem-meta">
+        <div>
+            <label>Problem ID</label>
+            <input id="problemId" type="text" placeholder="e.g. UVA100">
+        </div>
+
+        <div>
+            <label>Problem Title</label>
+            <input id="problemTitle" type="text" placeholder="e.g. The 3n + 1 problem">
+        </div>
+    </div>
+
+    <div class="statement-panel">
+        <h2>Problem Statement</h2>
+        <textarea id="problemStatement" placeholder="Write or paste the problem statement here..."></textarea>
     </div>
 
     <div class="container">
@@ -180,6 +240,13 @@ print(a + b)
             python: pythonTemplate
         };
 
+        const defaultInput = "3 5";
+        const defaultAnswer = "8";
+        const defaultProblemId = "";
+        const defaultProblemTitle = "";
+        const defaultProblemStatement = "";
+        const defaultLanguage = "cpp";
+
         const languageExtensions = {
             cpp: cpp(),
             c: cpp(),
@@ -219,6 +286,99 @@ print(a + b)
 
             editor.focus();
         };
+
+        window.resetPage = function () {
+            const languageSelect = document.getElementById("language");
+
+            languageSelect.value = defaultLanguage;
+
+            editor.dispatch({
+                changes: {
+                    from: 0,
+                    to: editor.state.doc.length,
+                    insert: templates[defaultLanguage]
+                },
+                effects: languageMode.reconfigure(languageExtensions[defaultLanguage])
+            });
+
+            document.getElementById("problemId").value = defaultProblemId;
+            document.getElementById("problemTitle").value = defaultProblemTitle;
+            document.getElementById("problemStatement").value = defaultProblemStatement;
+
+            document.getElementById("input").value = defaultInput;
+            document.getElementById("answer").value = defaultAnswer;
+
+            document.getElementById("status").textContent = "Status: Not Run";
+            document.getElementById("output").textContent = "Press Run...";
+
+            editor.focus();
+        };
+
+        window.saveProblem = async function () {
+            const problemId = document.getElementById("problemId").value;
+            const problemTitle = document.getElementById("problemTitle").value;
+            const problemStatement = document.getElementById("problemStatement").value;
+
+            const language = document.getElementById("language").value;
+            const code = editor.state.doc.toString();
+            const input = document.getElementById("input").value;
+            const answer = document.getElementById("answer").value;
+
+            const statusBox = document.getElementById("status");
+            const outputBox = document.getElementById("output");
+
+            if (!problemId.trim()) {
+                statusBox.textContent = "Status: Save Failed";
+                outputBox.textContent = "Problem ID is required.";
+                return;
+            }
+
+            if (!problemTitle.trim()) {
+                statusBox.textContent = "Status: Save Failed";
+                outputBox.textContent = "Problem title is required.";
+                return;
+            }
+
+            statusBox.textContent = "Status: Saving...";
+            outputBox.textContent = "Saving problem...";
+
+            try {
+                const response = await fetch("/api/problems/save", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        problemId,
+                        problemTitle,
+                        problemStatement,
+                        language,
+                        code,
+                        input,
+                        answer
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!result.ok) {
+                    statusBox.textContent = "Status: Save Failed";
+                    outputBox.textContent = result.message || "Save failed.";
+                    return;
+                }
+
+                statusBox.textContent = "Status: Saved";
+                outputBox.textContent =
+                    `Saved successfully\n` +
+                    `Problem ID: ${result.problem.problemId}\n` +
+                    `Title: ${result.problem.problemTitle}\n` +
+                    `Updated At: ${result.problem.updatedAt}\n`;
+            } catch (err) {
+                statusBox.textContent = "Status: Save Failed";
+                outputBox.textContent = err.toString();
+            }
+        };
+
 
         window.runCode = async function () {
             const code = editor.state.doc.toString();

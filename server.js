@@ -10,6 +10,40 @@ const PORT = 3001;
 app.use(express.json({ limit: "2mb" }));
 app.use(express.static("public"));
 
+const DATA_DIR = path.join(__dirname, "data");
+const PROBLEMS_DB = path.join(DATA_DIR, "problems.json");
+
+function ensureDataFiles() {
+    if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
+    if (!fs.existsSync(PROBLEMS_DB)) {
+        fs.writeFileSync(PROBLEMS_DB, "[]");
+    }
+}
+
+function readProblems() {
+    ensureDataFiles();
+
+    const raw = fs.readFileSync(PROBLEMS_DB, "utf8");
+
+    if (!raw.trim()) {
+        return [];
+    }
+
+    return JSON.parse(raw);
+}
+
+function writeProblems(problems) {
+    ensureDataFiles();
+
+    fs.writeFileSync(
+        PROBLEMS_DB,
+        JSON.stringify(problems, null, 2)
+    );
+}
+
 function runCommand(command, args, options = {}) {
     return new Promise((resolve) => {
         const start = Date.now();
@@ -109,6 +143,7 @@ app.post("/api/run", async (req, res) => {
             c: "main.c",
             python: "main.py"
         };
+
         const sourceFile = sourceFiles[lang];
 
         fs.writeFileSync(path.join(tempDir, sourceFile), code);
@@ -146,6 +181,84 @@ app.post("/api/run", async (req, res) => {
             force: true
         });
     }
+});
+
+app.post("/api/problems/save", (req, res) => {
+    const {
+        problemId,
+        problemTitle,
+        problemStatement,
+        language,
+        code,
+        input,
+        answer
+    } = req.body;
+
+    if (!problemId || !problemId.trim()) {
+        return res.status(400).json({
+            ok: false,
+            message: "Problem ID is required."
+        });
+    }
+
+    if (!problemTitle || !problemTitle.trim()) {
+        return res.status(400).json({
+            ok: false,
+            message: "Problem title is required."
+        });
+    }
+
+    const problems = readProblems();
+    const now = new Date().toISOString();
+    const normalizedId = problemId.trim();
+
+    const existingIndex = problems.findIndex(
+        (p) => p.problemId === normalizedId
+    );
+
+    const record = {
+        problemId: normalizedId,
+        problemTitle: problemTitle.trim(),
+        problemStatement: problemStatement || "",
+        language: language || "cpp",
+        code: code || "",
+        input: input || "",
+        answer: answer || "",
+        updatedAt: now,
+        createdAt: now
+    };
+
+    if (existingIndex >= 0) {
+        record.createdAt = problems[existingIndex].createdAt || now;
+        problems[existingIndex] = record;
+    } else {
+        problems.push(record);
+    }
+
+    writeProblems(problems);
+
+    res.json({
+        ok: true,
+        message: "Problem saved successfully.",
+        problem: record
+    });
+});
+
+app.get("/api/problems", (req, res) => {
+    const problems = readProblems();
+
+    const summary = problems.map((p) => ({
+        problemId: p.problemId,
+        problemTitle: p.problemTitle,
+        language: p.language,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt
+    }));
+
+    res.json({
+        ok: true,
+        problems: summary
+    });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
