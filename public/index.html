@@ -370,6 +370,46 @@ print(a + b)
             parent: document.getElementById("editor")
         });
 
+        function notify(message) {
+            window.alert(message);
+        }
+
+        function buildSaveNotification(result) {
+            const problem = result.problem || {};
+            const action = result.action || "saved";
+
+            if (action === "created") {
+                return (
+                    `Created new problem.\n\n` +
+                    `Problem ID: ${problem.problemId}\n` +
+                    `Title: ${problem.problemTitle}`
+                );
+            }
+
+            if (action === "updated") {
+                return (
+                    `Updated existing problem.\n\n` +
+                    `Problem ID: ${problem.problemId}\n` +
+                    `Title: ${problem.problemTitle}`
+                );
+            }
+
+            if (action === "renamed") {
+                return (
+                    `Renamed and updated problem.\n\n` +
+                    `Original ID: ${result.originalProblemId}\n` +
+                    `New ID: ${problem.problemId}\n` +
+                    `Title: ${problem.problemTitle}`
+                );
+            }
+
+            return (
+                `Problem saved.\n\n` +
+                `Problem ID: ${problem.problemId || ""}\n` +
+                `Title: ${problem.problemTitle || ""}`
+            );
+        }
+
         async function loadAppInfo() {
             const badge = document.getElementById("versionBadge");
 
@@ -407,6 +447,7 @@ print(a + b)
                 if (!result.ok) {
                     problemList.innerHTML =
                         `<div class="empty-history">Failed to load problems.</div>`;
+                    notify(result.message || "Failed to load problems.");
                     return;
                 }
 
@@ -449,6 +490,7 @@ print(a + b)
             } catch (err) {
                 problemList.innerHTML =
                     `<div class="empty-history">${escapeHtml(err.toString())}</div>`;
+                notify(`Failed to load problems.\n\n${err.toString()}`);
             }
         };
 
@@ -468,6 +510,7 @@ print(a + b)
                 if (!result.ok) {
                     statusBox.textContent = "Status: Load Failed";
                     outputBox.textContent = result.message || "Problem not found.";
+                    notify(result.message || "Problem not found.");
                     return;
                 }
 
@@ -504,6 +547,7 @@ print(a + b)
             } catch (err) {
                 statusBox.textContent = "Status: Load Failed";
                 outputBox.textContent = err.toString();
+                notify(`Load failed.\n\n${err.toString()}`);
             }
         };
 
@@ -579,12 +623,14 @@ print(a + b)
             if (!problemId.trim()) {
                 statusBox.textContent = "Status: Save Failed";
                 outputBox.textContent = "Problem ID is required.";
+                notify("Save rejected.\n\nProblem ID is required.");
                 return;
             }
 
             if (!problemTitle.trim()) {
                 statusBox.textContent = "Status: Save Failed";
                 outputBox.textContent = "Problem title is required.";
+                notify("Save rejected.\n\nProblem title is required.");
                 return;
             }
 
@@ -603,6 +649,7 @@ print(a + b)
                         `Save cancelled.\n` +
                         `Original loaded Problem ID: ${loadedProblemId}\n` +
                         `Current Problem ID: ${normalizedProblemId}\n`;
+                    notify("Save cancelled.");
                     return;
                 }
             }
@@ -633,6 +680,7 @@ print(a + b)
                 if (!result.ok) {
                     statusBox.textContent = "Status: Save Failed";
                     outputBox.textContent = result.message || "Save failed.";
+                    notify(`Save rejected.\n\n${result.message || "Save failed."}`);
                     return;
                 }
 
@@ -641,14 +689,17 @@ print(a + b)
                 statusBox.textContent = "Status: Saved";
                 outputBox.textContent =
                     `Saved successfully\n` +
+                    `Action: ${result.action}\n` +
                     `Problem ID: ${result.problem.problemId}\n` +
                     `Title: ${result.problem.problemTitle}\n` +
                     `Updated At: ${result.problem.updatedAt}\n`;
 
+                notify(buildSaveNotification(result));
                 loadProblemList();
             } catch (err) {
                 statusBox.textContent = "Status: Save Failed";
                 outputBox.textContent = err.toString();
+                notify(`Save failed.\n\n${err.toString()}`);
             }
         };
 

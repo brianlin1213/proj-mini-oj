@@ -211,6 +211,7 @@ app.post("/api/problems/save", (req, res) => {
     if (!problemId || !problemId.trim()) {
         return res.status(400).json({
             ok: false,
+            action: "rejected",
             message: "Problem ID is required."
         });
     }
@@ -218,6 +219,7 @@ app.post("/api/problems/save", (req, res) => {
     if (!problemTitle || !problemTitle.trim()) {
         return res.status(400).json({
             ok: false,
+            action: "rejected",
             message: "Problem title is required."
         });
     }
@@ -232,6 +234,7 @@ app.post("/api/problems/save", (req, res) => {
             : null;
 
     let existingIndex = -1;
+    let action = "created";
 
     if (normalizedOriginalId) {
         existingIndex = problems.findIndex(
@@ -241,6 +244,7 @@ app.post("/api/problems/save", (req, res) => {
         if (existingIndex < 0) {
             return res.status(404).json({
                 ok: false,
+                action: "rejected",
                 message: `Original problem "${normalizedOriginalId}" was not found. Please refresh the problem list.`
             });
         }
@@ -252,8 +256,15 @@ app.post("/api/problems/save", (req, res) => {
         if (conflictIndex >= 0 && conflictIndex !== existingIndex) {
             return res.status(409).json({
                 ok: false,
+                action: "rejected",
                 message: `Problem ID "${normalizedId}" already exists. Rename cancelled to avoid overwriting another problem.`
             });
+        }
+
+        if (normalizedOriginalId === normalizedId) {
+            action = "updated";
+        } else {
+            action = "renamed";
         }
     } else {
         existingIndex = problems.findIndex(
@@ -263,9 +274,12 @@ app.post("/api/problems/save", (req, res) => {
         if (existingIndex >= 0) {
             return res.status(409).json({
                 ok: false,
+                action: "rejected",
                 message: `Problem ID "${normalizedId}" already exists. Please load it from history before editing, or use a different Problem ID.`
             });
         }
+
+        action = "created";
     }
 
     const record = {
@@ -291,8 +305,10 @@ app.post("/api/problems/save", (req, res) => {
 
     res.json({
         ok: true,
+        action,
         message: "Problem saved successfully.",
-        problem: record
+        problem: record,
+        originalProblemId: normalizedOriginalId
     });
 });
 
