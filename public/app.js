@@ -52,6 +52,8 @@ const defaultProblemStatement = "";
 const defaultLanguage = "cpp";
 
 let loadedProblemId = null;
+let mathJaxRetryLeft = 0;
+let mathJaxRetryTimer = null;
 
 const languageExtensions = {
     cpp: cpp(),
@@ -95,14 +97,87 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
-function renderMathIfAvailable() {
+function protectMathBeforeMarkdown(rawText) {
+    const mathBlocks = [];
+
+    const protectedText = rawText.replace(
+        /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|(?<!\\)\$[^\n$]+?(?<!\\)\$)/g,
+        (match) => {
+            const token = `@@MINIOJ_MATH_${mathBlocks.length}@@`;
+            mathBlocks.push(match);
+            return token;
+        }
+    );
+
+    return {
+        protectedText,
+        mathBlocks
+    };
+}
+
+function restoreMathAfterMarkdown(html, mathBlocks) {
+    let restoredHtml = html;
+
+    mathBlocks.forEach((math, index) => {
+        const token = `@@MINIOJ_MATH_${index}@@`;
+        restoredHtml = restoredHtml.replaceAll(token, math);
+    });
+
+    return restoredHtml;
+}
+
+function renderMarkdownWithMath(rawText) {
+    const { protectedText, mathBlocks } = protectMathBeforeMarkdown(rawText);
+    const html = marked.parse(protectedText);
+
+    return restoreMathAfterMarkdown(html, mathBlocks);
+}
+
+function typesetPreview() {
     const preview = document.getElementById("problemPreview");
 
-    if (window.MathJax && window.MathJax.typesetPromise) {
-        window.MathJax.typesetPromise([preview]).catch((err) => {
-            console.log("MathJax render failed:", err);
-        });
+    if (!preview) {
+        return;
     }
+
+    if (window.MathJax && window.MathJax.typesetPromise) {
+        try {
+            if (window.MathJax.typesetClear) {
+                window.MathJax.typesetClear([preview]);
+            }
+
+            window.MathJax.typesetPromise([preview]).catch((err) => {
+                console.log("MathJax render failed:", err);
+            });
+        } catch (err) {
+            console.log("MathJax render failed:", err);
+        }
+
+        return;
+    }
+
+    if (mathJaxRetryTimer) {
+        return;
+    }
+
+    mathJaxRetryLeft = 30;
+
+    const retry = function () {
+        mathJaxRetryTimer = null;
+
+        if (window.MathJax && window.MathJax.typesetPromise) {
+            typesetPreview();
+            return;
+        }
+
+        mathJaxRetryLeft--;
+
+        if (mathJaxRetryLeft > 0) {
+            mathJaxRetryTimer = setTimeout(retry, 300);
+        }
+    };
+
+    mathJaxRetryTimer = setTimeout(retry, 300);
 }
 
 function updateMarkdownPreview() {
@@ -114,8 +189,8 @@ function updateMarkdownPreview() {
         return;
     }
 
-    preview.innerHTML = marked.parse(raw);
-    renderMathIfAvailable();
+    preview.innerHTML = renderMarkdownWithMath(raw);
+    typesetPreview();
 }
 
 window.updateMarkdownPreview = updateMarkdownPreview;
@@ -589,6 +664,11 @@ window.runCode = async function () {
 };
 
 document.getElementById("problemStatement").addEventListener("input", updateMarkdownPreview);
+
+window.addEventListener("load", () => {
+    setTimeout(updateMarkdownPreview, 300);
+    setTimeout(updateMarkdownPreview, 1000);
+});
 
 loadAppInfo();
 loadProblemList();
