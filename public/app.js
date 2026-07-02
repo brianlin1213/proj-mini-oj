@@ -6,6 +6,7 @@ import { python } from "https://esm.sh/@codemirror/lang-python";
 import { indentWithTab } from "https://esm.sh/@codemirror/commands";
 import { bracketMatching, indentUnit } from "https://esm.sh/@codemirror/language";
 import { closeBrackets, closeBracketsKeymap } from "https://esm.sh/@codemirror/autocomplete";
+import { marked } from "https://esm.sh/marked";
 
 import {
     parseMarkdownProblem,
@@ -76,6 +77,11 @@ const editor = new EditorView({
     parent: document.getElementById("editor")
 });
 
+marked.setOptions({
+    gfm: true,
+    breaks: false
+});
+
 function notify(message) {
     window.alert(message);
 }
@@ -87,6 +93,52 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+}
+
+function renderMathIfAvailable() {
+    const preview = document.getElementById("problemPreview");
+
+    if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise([preview]).catch((err) => {
+            console.log("MathJax render failed:", err);
+        });
+    }
+}
+
+function updateMarkdownPreview() {
+    const raw = document.getElementById("problemStatement").value;
+    const preview = document.getElementById("problemPreview");
+
+    if (!raw.trim()) {
+        preview.innerHTML = `<div style="color:#9ca3af;font-style:italic;">No problem statement.</div>`;
+        return;
+    }
+
+    preview.innerHTML = marked.parse(raw);
+    renderMathIfAvailable();
+}
+
+window.updateMarkdownPreview = updateMarkdownPreview;
+
+window.setStatementView = function (mode) {
+    const workspace = document.getElementById("statementWorkspace");
+
+    workspace.classList.remove("split-view", "edit-view", "preview-view");
+
+    if (mode === "edit") {
+        workspace.classList.add("edit-view");
+    } else if (mode === "preview") {
+        workspace.classList.add("preview-view");
+    } else {
+        workspace.classList.add("split-view");
+    }
+
+    updateMarkdownPreview();
+};
+
+function setProblemStatement(value) {
+    document.getElementById("problemStatement").value = value || "";
+    updateMarkdownPreview();
 }
 
 function buildSaveNotification(result) {
@@ -172,7 +224,7 @@ function applyImportedProblem(parsed) {
 
     document.getElementById("problemId").value = parsed.problemId;
     document.getElementById("problemTitle").value = parsed.problemTitle;
-    document.getElementById("problemStatement").value = parsed.problemStatement;
+    setProblemStatement(parsed.problemStatement);
     document.getElementById("input").value = parsed.sampleInput;
     document.getElementById("answer").value = parsed.sampleOutput;
     document.getElementById("language").value = language;
@@ -329,7 +381,7 @@ window.loadProblem = async function (encodedProblemId) {
 
         document.getElementById("problemId").value = problem.problemId || "";
         document.getElementById("problemTitle").value = problem.problemTitle || "";
-        document.getElementById("problemStatement").value = problem.problemStatement || "";
+        setProblemStatement(problem.problemStatement || "");
         document.getElementById("input").value = problem.input || "";
         document.getElementById("answer").value = problem.answer || "";
         document.getElementById("language").value = language;
@@ -371,7 +423,7 @@ window.resetPage = function () {
 
     document.getElementById("problemId").value = defaultProblemId;
     document.getElementById("problemTitle").value = defaultProblemTitle;
-    document.getElementById("problemStatement").value = defaultProblemStatement;
+    setProblemStatement(defaultProblemStatement);
 
     document.getElementById("input").value = defaultInput;
     document.getElementById("answer").value = defaultAnswer;
@@ -536,5 +588,8 @@ window.runCode = async function () {
     }
 };
 
+document.getElementById("problemStatement").addEventListener("input", updateMarkdownPreview);
+
 loadAppInfo();
 loadProblemList();
+updateMarkdownPreview();
