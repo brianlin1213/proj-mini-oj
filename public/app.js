@@ -253,6 +253,127 @@ function buildSaveNotification(result) {
     );
 }
 
+function buildCurrentProblemPayload() {
+    return {
+        originalProblemId: loadedProblemId,
+        problemId: document.getElementById("problemId").value,
+        problemTitle: document.getElementById("problemTitle").value,
+        problemStatement: document.getElementById("problemStatement").value,
+        language: document.getElementById("language").value,
+        code: editor.state.doc.toString(),
+        input: document.getElementById("input").value,
+        answer: document.getElementById("answer").value
+    };
+}
+
+async function saveCurrentProblem(options = {}) {
+    const notifySuccess = options.notifySuccess || false;
+    const notifyFailure = options.notifyFailure !== false;
+    const successMessage = options.successMessage || "Problem saved.";
+    const allowRenameConfirm = options.allowRenameConfirm || false;
+    const silent = options.silent || false;
+
+    const payload = buildCurrentProblemPayload();
+
+    const problemId = payload.problemId.trim();
+    const problemTitle = payload.problemTitle.trim();
+
+    if (!problemId) {
+        if (notifyFailure && !silent) {
+            notify("Save skipped.\n\nProblem ID is required.");
+        }
+
+        return {
+            ok: false,
+            message: "Problem ID is required."
+        };
+    }
+
+    if (!problemTitle) {
+        if (notifyFailure && !silent) {
+            notify("Save skipped.\n\nProblem title is required.");
+        }
+
+        return {
+            ok: false,
+            message: "Problem title is required."
+        };
+    }
+
+    if (loadedProblemId && loadedProblemId !== problemId && !allowRenameConfirm) {
+        return {
+            ok: false,
+            message:
+                `Auto-save skipped because Problem ID changed from "${loadedProblemId}" to "${problemId}". ` +
+                `Use Save manually if you want to rename it.`
+        };
+    }
+
+    if (loadedProblemId && loadedProblemId !== problemId && allowRenameConfirm) {
+        const confirmed = window.confirm(
+            `You loaded problem "${loadedProblemId}", but changed the Problem ID to "${problemId}".\n\n` +
+            `Saving now will rename the original problem "${loadedProblemId}" to "${problemId}".\n\n` +
+            `Do you want to continue?`
+        );
+
+        if (!confirmed) {
+            return {
+                ok: false,
+                message: "Save cancelled."
+            };
+        }
+    }
+
+    try {
+        const response = await fetch("/api/problems/save", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!result.ok) {
+            if (notifyFailure && !silent) {
+                notify(`Save rejected.\n\n${result.message || "Save failed."}`);
+            }
+
+            return result;
+        }
+
+        loadedProblemId = result.problem.problemId;
+
+        if (notifySuccess && !silent) {
+            notify(successMessage);
+        }
+
+        loadProblemList();
+
+        return result;
+    } catch (err) {
+        const result = {
+            ok: false,
+            message: err.toString()
+        };
+
+        if (notifyFailure && !silent) {
+            notify(`Save failed.\n\n${err.toString()}`);
+        }
+
+        return result;
+    }
+}
+
+function isAcceptedStatus(status) {
+    const normalized = String(status || "").trim().toUpperCase();
+
+    return normalized === "AC" ||
+        normalized === "ACCEPTED" ||
+        normalized.includes("ACCEPTED");
+}
+
 async function loadAppInfo() {
     const badge = document.getElementById("versionBadge");
 
@@ -260,7 +381,7 @@ async function loadAppInfo() {
         const response = await fetch("/api/app-info");
         const info = await response.json();
 
-        badge.textContent = `${info.appLabel} :${info.port}`;
+        badge.textContent = `${info.appLabel} v${info.appVersion} :${info.port}`;
 
         badge.classList.remove("develop", "release", "local");
 
@@ -322,7 +443,7 @@ window.clearImportText = function () {
     document.getElementById("rawProblemText").focus();
 };
 
-window.importProblemFromText = function () {
+window.importProblemFromText = async function () {
     const source = document.getElementById("importSource").value;
     const rawText = document.getElementById("rawProblemText").value;
 
@@ -344,25 +465,47 @@ window.importProblemFromText = function () {
 
         applyImportedProblem(parsed);
 
-        statusBox.textContent = "Status: Imported";
+        statusBox.textContent = "Status: Imported, Auto-saving...";
         outputBox.textContent =
             `Imported problem successfully.\n` +
+            `Auto-saving problem...\n` +
             `Source: ${parsed.source}\n` +
             `Problem ID: ${parsed.problemId}\n` +
             `Title: ${parsed.problemTitle}\n` +
-            `Language: ${parsed.language || "cpp"}\n` +
-            `Sample input length: ${parsed.sampleInput.length}\n` +
-            `Sample output length: ${parsed.sampleOutput.length}\n` +
+            `Language: ${parsed.language || "cpp"}\n`;
+
+        const saveResult = await saveCurrentProblem({
+            notifySuccess: false,
+            notifyFailure: false,
+            silent: true
+        });
+
+        if (!saveResult.ok) {
+            statusBox.textContent = "Status: Imported, Auto-save Failed";
+            outputBox.textContent +=
+                `\nAuto-save failed.\n` +
+                `${saveResult.message || "Unknown save error."}\n`;
+
+            notify(
+                `Import succeeded, but auto-save failed.\n\n` +
+                `${saveResult.message || "Unknown save error."}`
+            );
+
+            return;
+        }
+
+        statusBox.textContent = "Status: Imported and Saved";
+        outputBox.textContent +=
+            `\nAuto-save completed.\n` +
+            `Action: ${saveResult.action}\n` +
             `Code editor cleared.\n`;
 
         closeImportModal();
 
         notify(
-            `Imported problem.\n\n` +
-            `Source: ${parsed.source}\n` +
-            `Problem ID: ${parsed.problemId}\n` +
-            `Title: ${parsed.problemTitle}\n\n` +
-            `Code editor has been cleared.`
+            `Import successful and saved.\n\n` +
+            `Problem ID: ${saveResult.problem.problemId}\n` +
+            `Title: ${saveResult.problem.problemTitle}`
         );
 
         editor.focus();
@@ -470,8 +613,7 @@ window.loadProblem = async function (encodedProblemId) {
         outputBox.textContent =
             `Loaded successfully\n` +
             `Problem ID: ${problem.problemId}\n` +
-            `Title: ${problem.problemTitle}\n` +
-            `Code editor cleared or restored from saved code.\n`;
+            `Title: ${problem.problemTitle}\n`;
 
         editor.focus();
     } catch (err) {
@@ -511,99 +653,33 @@ window.resetPage = function () {
 };
 
 window.saveProblem = async function () {
-    const problemId = document.getElementById("problemId").value;
-    const problemTitle = document.getElementById("problemTitle").value;
-    const problemStatement = document.getElementById("problemStatement").value;
-
-    const language = document.getElementById("language").value;
-    const code = editor.state.doc.toString();
-    const input = document.getElementById("input").value;
-    const answer = document.getElementById("answer").value;
-
     const statusBox = document.getElementById("status");
     const outputBox = document.getElementById("output");
-
-    if (!problemId.trim()) {
-        statusBox.textContent = "Status: Save Failed";
-        outputBox.textContent = "Problem ID is required.";
-        notify("Save rejected.\n\nProblem ID is required.");
-        return;
-    }
-
-    if (!problemTitle.trim()) {
-        statusBox.textContent = "Status: Save Failed";
-        outputBox.textContent = "Problem title is required.";
-        notify("Save rejected.\n\nProblem title is required.");
-        return;
-    }
-
-    const normalizedProblemId = problemId.trim();
-
-    if (loadedProblemId && loadedProblemId !== normalizedProblemId) {
-        const confirmed = window.confirm(
-            `You loaded problem "${loadedProblemId}", but changed the Problem ID to "${normalizedProblemId}".\n\n` +
-            `Saving now will rename the original problem "${loadedProblemId}" to "${normalizedProblemId}".\n\n` +
-            `Do you want to continue?`
-        );
-
-        if (!confirmed) {
-            statusBox.textContent = "Status: Save Cancelled";
-            outputBox.textContent =
-                `Save cancelled.\n` +
-                `Original loaded Problem ID: ${loadedProblemId}\n` +
-                `Current Problem ID: ${normalizedProblemId}\n`;
-            notify("Save cancelled.");
-            return;
-        }
-    }
 
     statusBox.textContent = "Status: Saving...";
     outputBox.textContent = "Saving problem...";
 
-    try {
-        const response = await fetch("/api/problems/save", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                originalProblemId: loadedProblemId,
-                problemId,
-                problemTitle,
-                problemStatement,
-                language,
-                code,
-                input,
-                answer
-            })
-        });
+    const result = await saveCurrentProblem({
+        notifySuccess: true,
+        notifyFailure: true,
+        successMessage: "Problem saved.",
+        allowRenameConfirm: true,
+        silent: false
+    });
 
-        const result = await response.json();
-
-        if (!result.ok) {
-            statusBox.textContent = "Status: Save Failed";
-            outputBox.textContent = result.message || "Save failed.";
-            notify(`Save rejected.\n\n${result.message || "Save failed."}`);
-            return;
-        }
-
-        loadedProblemId = result.problem.problemId;
-
-        statusBox.textContent = "Status: Saved";
-        outputBox.textContent =
-            `Saved successfully\n` +
-            `Action: ${result.action}\n` +
-            `Problem ID: ${result.problem.problemId}\n` +
-            `Title: ${result.problem.problemTitle}\n` +
-            `Updated At: ${result.problem.updatedAt}\n`;
-
-        notify(buildSaveNotification(result));
-        loadProblemList();
-    } catch (err) {
+    if (!result.ok) {
         statusBox.textContent = "Status: Save Failed";
-        outputBox.textContent = err.toString();
-        notify(`Save failed.\n\n${err.toString()}`);
+        outputBox.textContent = result.message || "Save failed.";
+        return;
     }
+
+    statusBox.textContent = "Status: Saved";
+    outputBox.textContent =
+        `Saved successfully\n` +
+        `Action: ${result.action}\n` +
+        `Problem ID: ${result.problem.problemId}\n` +
+        `Title: ${result.problem.problemTitle}\n` +
+        `Updated At: ${result.problem.updatedAt}\n`;
 };
 
 window.runCode = async function () {
@@ -633,6 +709,36 @@ window.runCode = async function () {
         });
 
         const result = await response.json();
+        const accepted = isAcceptedStatus(result.status);
+
+        let autoSaveMessage = "";
+
+        if (accepted) {
+            const saveResult = await saveCurrentProblem({
+                notifySuccess: false,
+                notifyFailure: false,
+                silent: true
+            });
+
+            if (saveResult.ok) {
+                autoSaveMessage = "Auto-save: AC saved.";
+                notify(
+                    `AC and saved.\n\n` +
+                    `Problem ID: ${saveResult.problem.problemId}\n` +
+                    `Title: ${saveResult.problem.problemTitle}`
+                );
+            } else {
+                autoSaveMessage =
+                    `Auto-save failed: ${saveResult.message || "Unknown save error."}`;
+
+                notify(
+                    `AC, but auto-save failed.\n\n` +
+                    `${saveResult.message || "Unknown save error."}`
+                );
+            }
+        } else {
+            autoSaveMessage = "Auto-save: skipped because result is not AC.";
+        }
 
         statusBox.textContent =
             `Status: ${result.status} | Time: ${result.timeMs || 0} ms`;
@@ -643,13 +749,15 @@ window.runCode = async function () {
             text += result.message + "\n";
         }
 
+        text += autoSaveMessage + "\n";
+
         if (result.stdout) {
-            text += "===== stdout =====\n";
+            text += "\n===== stdout =====\n";
             text += result.stdout + "\n";
         }
 
         if (result.stderr) {
-            text += "===== stderr =====\n";
+            text += "\n===== stderr =====\n";
             text += result.stderr + "\n";
         }
 

@@ -2,9 +2,9 @@ require("dotenv").config();
 
 const express = require("express");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
-const { spawn } = require("child_process");
+const crypto = require("crypto");
+const { execFile } = require("child_process");
 
 const app = express();
 
@@ -12,11 +12,25 @@ const PORT = process.env.PORT || 3000;
 const APP_ENV = process.env.APP_ENV || "local";
 const APP_LABEL = process.env.APP_LABEL || "Local Version";
 
-app.use(express.json({ limit: "2mb" }));
-app.use(express.static("public"));
+let packageInfo = {};
+try {
+    packageInfo = require("./package.json");
+} catch (err) {
+    packageInfo = {};
+}
+
+const APP_VERSION =
+    process.env.APP_VERSION ||
+    packageInfo.version ||
+    "0.0.0";
 
 const DATA_DIR = path.join(__dirname, "data");
 const PROBLEMS_DB = path.join(DATA_DIR, "problems.json");
+const RUNNER_DIR = path.join(__dirname, "runner");
+const JOBS_DIR = path.join(RUNNER_DIR, "jobs");
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.static(path.join(__dirname, "public")));
 
 function ensureDataFiles() {
     if (!fs.existsSync(DATA_DIR)) {
@@ -24,172 +38,240 @@ function ensureDataFiles() {
     }
 
     if (!fs.existsSync(PROBLEMS_DB)) {
-        fs.writeFileSync(PROBLEMS_DB, "[]");
+        fs.writeFileSync(PROBLEMS_DB, "[]", "utf8");
     }
+
+    if (!fs.existsSync(JOBS_DIR)) {
+        fs.mkdirSync(JOBS_DIR, { recursive: true });
+    }
+}
+
+function normalizeProblem(problem) {
+    const now = new Date().toISOString();
+
+    return {
+        problemId: problem.problemId || "",
+        problemTitle: problem.problemTitle || "",
+        problemStatement: problem.problemStatement || "",
+        language: problem.language || "cpp",
+        code: problem.code ?? "",
+        input: problem.input ?? "",
+        answer: problem.answer ?? "",
+        createdAt: problem.createdAt || now,
+        updatedAt: problem.updatedAt || now
+    };
 }
 
 function readProblems() {
     ensureDataFiles();
 
-    const raw = fs.readFileSync(PROBLEMS_DB, "utf8");
+    try {
+        const raw = fs.readFileSync(PROBLEMS_DB, "utf8");
+        const parsed = JSON.parse(raw);
 
-    if (!raw.trim()) {
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+
+        return parsed.map(normalizeProblem);
+    } catch (err) {
         return [];
     }
-
-    return JSON.parse(raw);
 }
 
 function writeProblems(problems) {
     ensureDataFiles();
-
-    fs.writeFileSync(
-        PROBLEMS_DB,
-        JSON.stringify(problems, null, 2)
-    );
+    fs.writeFileSync(PROBLEMS_DB, JSON.stringify(problems, null, 2), "utf8");
 }
 
-function runCommand(command, args, options = {}) {
+function normalizeOutput(value) {
+    return String(value || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .trim();
+}
+
+function runCommand(command, args, options) {
     return new Promise((resolve) => {
         const start = Date.now();
 
-        const child = spawn(command, args, {
-            cwd: options.cwd,
-            detached: true,
-            stdio: ["ignore", "pipe", "pipe"]
-        });
-
-        let stdout = "";
-        let stderr = "";
-        let timedOut = false;
-
-        const timer = setTimeout(() => {
-            timedOut = true;
-
-            try {
-                process.kill(-child.pid, "SIGKILL");
-            } catch (err) {
-                // already exited
-            }
-        }, options.timeout || 5000);
-
-        child.stdout.on("data", (data) => {
-            stdout += data.toString();
-        });
-
-        child.stderr.on("data", (data) => {
-            stderr += data.toString();
-        });
-
-        child.on("close", (code) => {
-            clearTimeout(timer);
+        execFile(command, args, options, (error, stdout, stderr) => {
+            const timeMs = Date.now() - start;
 
             resolve({
-                code,
-                stdout,
-                stderr,
-                timedOut,
-                timeMs: Date.now() - start
+                error,
+                stdout: stdout || "",
+                stderr: stderr || "",
+                timeMs
             });
         });
     });
 }
 
-function detectStatus(result) {
-    const text = result.stdout + "\n" + result.stderr;
+function runExecutable(command, args, jobDir, input, answer) {
+    return new Promise((resolve) => {
+        const start = Date.now();
 
-    if (result.timedOut) {
-        return "TLE";
+        const child = execFile(
+            command,
+            args,
+            {
+                cwd: jobDir,
+                timeout: 3000,
+                maxBuffer: 1024 * 1024
+            },
+            (error, stdout, stderr) => {
+                const timeMs = Date.now() - start;
+
+                if (error) {
+                    const isTimeout = error.killed || error.signal === "SIGTERM";
+
+                    resolve({
+                        status: isTimeout ? "TLE" : "RE",
+                        message: isTimeout ? "Time Limit Exceeded" : "Runtime Error",
+                        stdout: stdout || "",
+                        stderr: stderr || error.message,
+                        timeMs
+                    });
+
+                    return;
+                }
+
+                const actual = normalizeOutput(stdout);
+                const expected = normalizeOutput(answer);
+                const accepted = actual === expected;
+
+                resolve({
+                    status: accepted ? "AC" : "WA",
+                    message: accepted ? "Accepted" : "Wrong Answer",
+                    stdout: stdout || "",
+                    stderr: stderr || "",
+                    timeMs
+                });
+            }
+        );
+
+        child.stdin.write(input || "");
+        child.stdin.end();
+    });
+}
+
+async function compileAndRunCpp(jobDir, code, input, answer) {
+    const sourcePath = path.join(jobDir, "main.cpp");
+    const binaryPath = path.join(jobDir, "main");
+
+    fs.writeFileSync(sourcePath, code, "utf8");
+
+    const compile = await runCommand(
+        "g++",
+        ["-std=c++17", "-O2", "-pipe", sourcePath, "-o", binaryPath],
+        {
+            cwd: jobDir,
+            timeout: 10000,
+            maxBuffer: 1024 * 1024
+        }
+    );
+
+    if (compile.error) {
+        return {
+            status: "CE",
+            message: "Compile Error",
+            stdout: compile.stdout,
+            stderr: compile.stderr || compile.error.message,
+            timeMs: compile.timeMs
+        };
     }
 
-    if (text.includes("[AC]")) {
-        return "AC";
+    return runExecutable(binaryPath, [], jobDir, input, answer);
+}
+
+async function compileAndRunC(jobDir, code, input, answer) {
+    const sourcePath = path.join(jobDir, "main.c");
+    const binaryPath = path.join(jobDir, "main");
+
+    fs.writeFileSync(sourcePath, code, "utf8");
+
+    const compile = await runCommand(
+        "gcc",
+        ["-std=c11", "-O2", "-pipe", sourcePath, "-o", binaryPath],
+        {
+            cwd: jobDir,
+            timeout: 10000,
+            maxBuffer: 1024 * 1024
+        }
+    );
+
+    if (compile.error) {
+        return {
+            status: "CE",
+            message: "Compile Error",
+            stdout: compile.stdout,
+            stderr: compile.stderr || compile.error.message,
+            timeMs: compile.timeMs
+        };
     }
 
-    if (text.includes("[WA]")) {
-        return "WA";
-    }
+    return runExecutable(binaryPath, [], jobDir, input, answer);
+}
 
-    if (text.includes("[NO ANSWER]")) {
-        return "DONE";
-    }
+async function runPython(jobDir, code, input, answer) {
+    const sourcePath = path.join(jobDir, "main.py");
 
-    if (result.code !== 0) {
-        return "ERROR";
-    }
+    fs.writeFileSync(sourcePath, code, "utf8");
 
-    return "DONE";
+    return runExecutable("python3", [sourcePath], jobDir, input, answer);
 }
 
 app.get("/api/app-info", (req, res) => {
     res.json({
         appEnv: APP_ENV,
         appLabel: APP_LABEL,
+        appVersion: APP_VERSION,
         port: PORT
     });
 });
 
 app.post("/api/run", async (req, res) => {
-    const { code, input, answer, language } = req.body;
+    const code = req.body.code || "";
+    const input = req.body.input || "";
+    const answer = req.body.answer || "";
+    const language = req.body.language || "cpp";
 
-    if (!code || code.trim() === "") {
-        return res.json({
-            status: "ERROR",
-            message: "No code provided."
-        });
-    }
+    const jobId = crypto.randomBytes(12).toString("hex");
+    const jobDir = path.join(JOBS_DIR, jobId);
 
-    const lang = language || "cpp";
-
-    if (lang !== "cpp" && lang !== "c" && lang !== "python") {
-        return res.json({
-            status: "ERROR",
-            message: "Only C, C++, and Python are supported."
-        });
-    }
-
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mini-oj-"));
+    fs.mkdirSync(jobDir, { recursive: true });
 
     try {
-        const sourceFiles = {
-            cpp: "main.cpp",
-            c: "main.c",
-            python: "main.py"
-        };
+        let result;
 
-        const sourceFile = sourceFiles[lang];
+        if (language === "cpp") {
+            result = await compileAndRunCpp(jobDir, code, input, answer);
+        } else if (language === "c") {
+            result = await compileAndRunC(jobDir, code, input, answer);
+        } else if (language === "python") {
+            result = await runPython(jobDir, code, input, answer);
+        } else {
+            result = {
+                status: "ERROR",
+                message: `Unsupported language: ${language}`,
+                stdout: "",
+                stderr: "",
+                timeMs: 0
+            };
+        }
 
-        fs.writeFileSync(path.join(tempDir, sourceFile), code);
-        fs.writeFileSync(path.join(tempDir, "input.txt"), input || "");
-        fs.writeFileSync(path.join(tempDir, "answer.txt"), answer || "");
-
-        fs.copyFileSync(
-            path.join(__dirname, "runner", "Makefile"),
-            path.join(tempDir, "Makefile")
-        );
-
-        const result = await runCommand("make", ["check"], {
-            cwd: tempDir,
-            timeout: 5000
-        });
-
-        const status = detectStatus(result);
-
-        res.json({
-            status,
-            stdout: result.stdout,
-            stderr: result.stderr,
-            timeMs: result.timeMs,
-            exitCode: result.code,
-            timedOut: result.timedOut
-        });
+        res.json(result);
     } catch (err) {
-        res.json({
+        res.status(500).json({
             status: "ERROR",
-            message: err.toString()
+            message: err.toString(),
+            stdout: "",
+            stderr: err.stack || err.toString(),
+            timeMs: 0
         });
     } finally {
-        fs.rmSync(tempDir, {
+        fs.rmSync(jobDir, {
             recursive: true,
             force: true
         });
@@ -197,18 +279,12 @@ app.post("/api/run", async (req, res) => {
 });
 
 app.post("/api/problems/save", (req, res) => {
-    const {
-        originalProblemId,
-        problemId,
-        problemTitle,
-        problemStatement,
-        language,
-        code,
-        input,
-        answer
-    } = req.body;
+    const originalProblemId = (req.body.originalProblemId || "").trim();
+    const problemId = (req.body.problemId || "").trim();
+    const problemTitle = (req.body.problemTitle || "").trim();
+    const now = new Date().toISOString();
 
-    if (!problemId || !problemId.trim()) {
+    if (!problemId) {
         return res.status(400).json({
             ok: false,
             action: "rejected",
@@ -216,7 +292,7 @@ app.post("/api/problems/save", (req, res) => {
         });
     }
 
-    if (!problemTitle || !problemTitle.trim()) {
+    if (!problemTitle) {
         return res.status(400).json({
             ok: false,
             action: "rejected",
@@ -225,107 +301,101 @@ app.post("/api/problems/save", (req, res) => {
     }
 
     const problems = readProblems();
-    const now = new Date().toISOString();
 
-    const normalizedId = problemId.trim();
-    const normalizedOriginalId =
-        originalProblemId && originalProblemId.trim()
-            ? originalProblemId.trim()
-            : null;
-
-    let existingIndex = -1;
-    let action = "created";
-
-    if (normalizedOriginalId) {
-        existingIndex = problems.findIndex(
-            (p) => p.problemId === normalizedOriginalId
+    if (originalProblemId) {
+        const originalIndex = problems.findIndex(
+            (problem) => problem.problemId === originalProblemId
         );
 
-        if (existingIndex < 0) {
+        if (originalIndex < 0) {
             return res.status(404).json({
                 ok: false,
                 action: "rejected",
-                message: `Original problem "${normalizedOriginalId}" was not found. Please refresh the problem list.`
+                message: `Original problem "${originalProblemId}" was not found.`
             });
         }
 
         const conflictIndex = problems.findIndex(
-            (p) => p.problemId === normalizedId
+            (problem, index) =>
+                index !== originalIndex &&
+                problem.problemId === problemId
         );
 
-        if (conflictIndex >= 0 && conflictIndex !== existingIndex) {
+        if (conflictIndex >= 0) {
             return res.status(409).json({
                 ok: false,
                 action: "rejected",
-                message: `Problem ID "${normalizedId}" already exists. Rename cancelled to avoid overwriting another problem.`
+                message: `Problem ID "${problemId}" already exists. Rename rejected.`
             });
         }
 
-        if (normalizedOriginalId === normalizedId) {
-            action = "updated";
-        } else {
-            action = "renamed";
-        }
-    } else {
-        existingIndex = problems.findIndex(
-            (p) => p.problemId === normalizedId
-        );
+        const existing = normalizeProblem(problems[originalIndex]);
 
-        if (existingIndex >= 0) {
-            return res.status(409).json({
-                ok: false,
-                action: "rejected",
-                message: `Problem ID "${normalizedId}" already exists. Please load it from history before editing, or use a different Problem ID.`
-            });
-        }
+        const updatedProblem = normalizeProblem({
+            ...existing,
+            problemId,
+            problemTitle,
+            problemStatement: req.body.problemStatement ?? existing.problemStatement,
+            language: req.body.language ?? existing.language,
+            code: req.body.code ?? existing.code,
+            input: req.body.input ?? existing.input,
+            answer: req.body.answer ?? existing.answer,
+            createdAt: existing.createdAt,
+            updatedAt: now
+        });
 
-        action = "created";
+        problems[originalIndex] = updatedProblem;
+        writeProblems(problems);
+
+        return res.json({
+            ok: true,
+            action: originalProblemId === problemId ? "updated" : "renamed",
+            originalProblemId,
+            problem: updatedProblem
+        });
     }
 
-    const record = {
-        problemId: normalizedId,
-        problemTitle: problemTitle.trim(),
-        problemStatement: problemStatement || "",
-        language: language || "cpp",
-        code: code || "",
-        input: input || "",
-        answer: answer || "",
-        updatedAt: now,
-        createdAt: now
-    };
+    const existingIndex = problems.findIndex(
+        (problem) => problem.problemId === problemId
+    );
 
     if (existingIndex >= 0) {
-        record.createdAt = problems[existingIndex].createdAt || now;
-        problems[existingIndex] = record;
-    } else {
-        problems.push(record);
+        return res.status(409).json({
+            ok: false,
+            action: "rejected",
+            message: `Problem ID "${problemId}" already exists. New problem save rejected.`
+        });
     }
 
+    const newProblem = normalizeProblem({
+        problemId,
+        problemTitle,
+        problemStatement: req.body.problemStatement || "",
+        language: req.body.language || "cpp",
+        code: req.body.code ?? "",
+        input: req.body.input ?? "",
+        answer: req.body.answer ?? "",
+        createdAt: now,
+        updatedAt: now
+    });
+
+    problems.push(newProblem);
     writeProblems(problems);
 
     res.json({
         ok: true,
-        action,
-        message: "Problem saved successfully.",
-        problem: record,
-        originalProblemId: normalizedOriginalId
+        action: "created",
+        originalProblemId: "",
+        problem: newProblem
     });
 });
 
 app.get("/api/problems", (req, res) => {
     const problems = readProblems();
 
-    const summary = problems.map((p) => ({
-        problemId: p.problemId,
-        problemTitle: p.problemTitle,
-        language: p.language,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt
-    }));
-
     res.json({
         ok: true,
-        problems: summary
+        problems
     });
 });
 
@@ -334,7 +404,7 @@ app.get("/api/problems/:problemId", (req, res) => {
     const problemId = req.params.problemId;
 
     const problem = problems.find(
-        (p) => p.problemId === problemId
+        (item) => item.problemId === problemId
     );
 
     if (!problem) {
@@ -346,10 +416,12 @@ app.get("/api/problems/:problemId", (req, res) => {
 
     res.json({
         ok: true,
-        problem
+        problem: normalizeProblem(problem)
     });
 });
 
+ensureDataFiles();
+
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`${APP_LABEL} running at http://0.0.0.0:${PORT}`);
+    console.log(`${APP_LABEL} v${APP_VERSION} running at http://0.0.0.0:${PORT}`);
 });
