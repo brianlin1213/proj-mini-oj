@@ -305,7 +305,7 @@ function applyImportedProblem(parsed) {
     document.getElementById("answer").value = parsed.sampleOutput;
     document.getElementById("language").value = language;
 
-    setEditorContent(parsed.code || "", language);
+    setEditorContent(parsed.code ?? "", language);
 }
 
 window.openImportModal = function () {
@@ -464,16 +464,14 @@ window.loadProblem = async function (encodedProblemId) {
         document.getElementById("answer").value = problem.answer || "";
         document.getElementById("language").value = language;
 
-        setEditorContent(
-            problem.code || templates[language] || templates.cpp,
-            language
-        );
+        setEditorContent(problem.code ?? "", language);
 
         statusBox.textContent = "Status: Problem Loaded";
         outputBox.textContent =
             `Loaded successfully\n` +
             `Problem ID: ${problem.problemId}\n` +
-            `Title: ${problem.problemTitle}\n`;
+            `Title: ${problem.problemTitle}\n` +
+            `Code editor cleared or restored from saved code.\n`;
 
         editor.focus();
     } catch (err) {
