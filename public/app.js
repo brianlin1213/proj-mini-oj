@@ -56,6 +56,8 @@ let loadedProblemId = null;
 let mathJaxRetryLeft = 0;
 let mathJaxRetryTimer = null;
 
+let currentProblemStats = createEmptyStats();
+
 const languageExtensions = {
     cpp: cpp(),
     c: cpp(),
@@ -85,6 +87,26 @@ marked.setOptions({
     breaks: false
 });
 
+function createEmptyStats() {
+    return {
+        attemptCount: 0,
+        acceptedCount: 0,
+        isAccepted: false,
+        lastAttemptAt: null,
+        lastAcceptedAt: null
+    };
+}
+
+function normalizeStatsFromProblem(problem) {
+    return {
+        attemptCount: Number(problem.attemptCount || 0),
+        acceptedCount: Number(problem.acceptedCount || 0),
+        isAccepted: Boolean(problem.isAccepted || false),
+        lastAttemptAt: problem.lastAttemptAt || null,
+        lastAcceptedAt: problem.lastAcceptedAt || null
+    };
+}
+
 function notify(message) {
     window.alert(message);
 }
@@ -96,6 +118,10 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
+}
+
+function formatAppVersion(version) {
+    return String(version || "0.0.0");
 }
 
 function protectMathBeforeMarkdown(rawText) {
@@ -217,40 +243,12 @@ function setProblemStatement(value) {
     updateMarkdownPreview();
 }
 
-function buildSaveNotification(result) {
-    const problem = result.problem || {};
-    const action = result.action || "saved";
+function isAcceptedStatus(status) {
+    const normalized = String(status || "").trim().toUpperCase();
 
-    if (action === "created") {
-        return (
-            `Created new problem.\n\n` +
-            `Problem ID: ${problem.problemId}\n` +
-            `Title: ${problem.problemTitle}`
-        );
-    }
-
-    if (action === "updated") {
-        return (
-            `Updated existing problem.\n\n` +
-            `Problem ID: ${problem.problemId}\n` +
-            `Title: ${problem.problemTitle}`
-        );
-    }
-
-    if (action === "renamed") {
-        return (
-            `Renamed and updated problem.\n\n` +
-            `Original ID: ${result.originalProblemId}\n` +
-            `New ID: ${problem.problemId}\n` +
-            `Title: ${problem.problemTitle}`
-        );
-    }
-
-    return (
-        `Problem saved.\n\n` +
-        `Problem ID: ${problem.problemId || ""}\n` +
-        `Title: ${problem.problemTitle || ""}`
-    );
+    return normalized === "AC" ||
+        normalized === "ACCEPTED" ||
+        normalized.includes("ACCEPTED");
 }
 
 function buildCurrentProblemPayload() {
@@ -262,7 +260,13 @@ function buildCurrentProblemPayload() {
         language: document.getElementById("language").value,
         code: editor.state.doc.toString(),
         input: document.getElementById("input").value,
-        answer: document.getElementById("answer").value
+        answer: document.getElementById("answer").value,
+
+        attemptCount: currentProblemStats.attemptCount,
+        acceptedCount: currentProblemStats.acceptedCount,
+        isAccepted: currentProblemStats.isAccepted,
+        lastAttemptAt: currentProblemStats.lastAttemptAt,
+        lastAcceptedAt: currentProblemStats.lastAcceptedAt
     };
 }
 
@@ -344,6 +348,7 @@ async function saveCurrentProblem(options = {}) {
         }
 
         loadedProblemId = result.problem.problemId;
+        currentProblemStats = normalizeStatsFromProblem(result.problem);
 
         if (notifySuccess && !silent) {
             notify(successMessage);
@@ -366,14 +371,6 @@ async function saveCurrentProblem(options = {}) {
     }
 }
 
-function isAcceptedStatus(status) {
-    const normalized = String(status || "").trim().toUpperCase();
-
-    return normalized === "AC" ||
-        normalized === "ACCEPTED" ||
-        normalized.includes("ACCEPTED");
-}
-
 async function loadAppInfo() {
     const badge = document.getElementById("versionBadge");
 
@@ -381,7 +378,8 @@ async function loadAppInfo() {
         const response = await fetch("/api/app-info");
         const info = await response.json();
 
-        badge.textContent = `${info.appLabel} v${info.appVersion} :${info.port}`;
+        badge.textContent =
+            `${info.appLabel} v${formatAppVersion(info.appVersion)} :${info.port}`;
 
         badge.classList.remove("develop", "release", "local");
 
@@ -416,6 +414,7 @@ function setEditorContent(content, language) {
 
 function applyImportedProblem(parsed) {
     loadedProblemId = null;
+    currentProblemStats = createEmptyStats();
 
     const language = parsed.language || defaultLanguage;
 
@@ -532,7 +531,14 @@ window.loadProblemList = async function () {
             return;
         }
 
-        if (!result.problems || result.problems.length === 0) {
+        const problems = (result.problems || []).slice().sort((a, b) => {
+            const bTime = new Date(b.updatedAt || 0).getTime();
+            const aTime = new Date(a.updatedAt || 0).getTime();
+
+            return bTime - aTime;
+        });
+
+        if (problems.length === 0) {
             problemList.innerHTML =
                 `<div class="empty-history">No saved problems yet.</div>`;
             return;
@@ -540,7 +546,7 @@ window.loadProblemList = async function () {
 
         problemList.innerHTML = "";
 
-        result.problems.forEach((problem) => {
+        problems.forEach((problem) => {
             const item = document.createElement("div");
             item.className = "problem-item";
 
@@ -550,11 +556,33 @@ window.loadProblemList = async function () {
 
             const encodedProblemId = encodeURIComponent(problem.problemId);
 
+            const attemptCount = Number(problem.attemptCount || 0);
+            const acceptedCount = Number(problem.acceptedCount || 0);
+            const isAccepted = Boolean(problem.isAccepted || false);
+
+            const acClass = isAccepted ? "ac" : "not-ac";
+            const acText = isAccepted ? "AC" : "Not AC";
+
             item.innerHTML = `
                 <div class="problem-info">
                     <div class="problem-name">
                         ${escapeHtml(problem.problemId)} - ${escapeHtml(problem.problemTitle)}
                     </div>
+
+                    <div class="problem-badges">
+                        <span class="status-pill ${acClass}">
+                            ${acText}
+                        </span>
+
+                        <span class="attempt-pill">
+                            Attempt: ${attemptCount}
+                        </span>
+
+                        <span class="attempt-pill">
+                            AC Count: ${acceptedCount}
+                        </span>
+                    </div>
+
                     <div class="problem-meta-small">
                         Language: ${escapeHtml(problem.language || "cpp")} |
                         Updated: ${escapeHtml(updatedAt)}
@@ -599,6 +627,7 @@ window.loadProblem = async function (encodedProblemId) {
         const language = problem.language || "cpp";
 
         loadedProblemId = problem.problemId;
+        currentProblemStats = normalizeStatsFromProblem(problem);
 
         document.getElementById("problemId").value = problem.problemId || "";
         document.getElementById("problemTitle").value = problem.problemTitle || "";
@@ -613,7 +642,10 @@ window.loadProblem = async function (encodedProblemId) {
         outputBox.textContent =
             `Loaded successfully\n` +
             `Problem ID: ${problem.problemId}\n` +
-            `Title: ${problem.problemTitle}\n`;
+            `Title: ${problem.problemTitle}\n` +
+            `AC: ${problem.isAccepted ? "Yes" : "No"}\n` +
+            `Attempt: ${problem.attemptCount || 0}\n` +
+            `AC Count: ${problem.acceptedCount || 0}\n`;
 
         editor.focus();
     } catch (err) {
@@ -636,6 +668,7 @@ window.resetPage = function () {
 
     languageSelect.value = defaultLanguage;
     loadedProblemId = null;
+    currentProblemStats = createEmptyStats();
 
     setEditorContent(templates[defaultLanguage], defaultLanguage);
 
@@ -679,6 +712,9 @@ window.saveProblem = async function () {
         `Action: ${result.action}\n` +
         `Problem ID: ${result.problem.problemId}\n` +
         `Title: ${result.problem.problemTitle}\n` +
+        `AC: ${result.problem.isAccepted ? "Yes" : "No"}\n` +
+        `Attempt: ${result.problem.attemptCount || 0}\n` +
+        `AC Count: ${result.problem.acceptedCount || 0}\n` +
         `Updated At: ${result.problem.updatedAt}\n`;
 };
 
@@ -710,34 +746,49 @@ window.runCode = async function () {
 
         const result = await response.json();
         const accepted = isAcceptedStatus(result.status);
+        const now = new Date().toISOString();
+
+        currentProblemStats.attemptCount += 1;
+        currentProblemStats.lastAttemptAt = now;
+
+        if (accepted) {
+            currentProblemStats.isAccepted = true;
+            currentProblemStats.acceptedCount += 1;
+            currentProblemStats.lastAcceptedAt = now;
+        }
+
+        const saveResult = await saveCurrentProblem({
+            notifySuccess: false,
+            notifyFailure: false,
+            silent: true
+        });
 
         let autoSaveMessage = "";
 
-        if (accepted) {
-            const saveResult = await saveCurrentProblem({
-                notifySuccess: false,
-                notifyFailure: false,
-                silent: true
-            });
+        if (saveResult.ok) {
+            if (accepted) {
+                autoSaveMessage = "Auto-save: AC and attempt saved.";
 
-            if (saveResult.ok) {
-                autoSaveMessage = "Auto-save: AC saved.";
                 notify(
                     `AC and saved.\n\n` +
                     `Problem ID: ${saveResult.problem.problemId}\n` +
-                    `Title: ${saveResult.problem.problemTitle}`
+                    `Title: ${saveResult.problem.problemTitle}\n` +
+                    `Attempt: ${saveResult.problem.attemptCount || 0}\n` +
+                    `AC Count: ${saveResult.problem.acceptedCount || 0}`
                 );
             } else {
-                autoSaveMessage =
-                    `Auto-save failed: ${saveResult.message || "Unknown save error."}`;
+                autoSaveMessage = "Auto-save: attempt saved.";
+            }
+        } else {
+            autoSaveMessage =
+                `Auto-save failed/skipped: ${saveResult.message || "Unknown save error."}`;
 
+            if (accepted) {
                 notify(
                     `AC, but auto-save failed.\n\n` +
                     `${saveResult.message || "Unknown save error."}`
                 );
             }
-        } else {
-            autoSaveMessage = "Auto-save: skipped because result is not AC.";
         }
 
         statusBox.textContent =
@@ -750,6 +801,9 @@ window.runCode = async function () {
         }
 
         text += autoSaveMessage + "\n";
+        text += `Attempt: ${currentProblemStats.attemptCount}\n`;
+        text += `AC: ${currentProblemStats.isAccepted ? "Yes" : "No"}\n`;
+        text += `AC Count: ${currentProblemStats.acceptedCount}\n`;
 
         if (result.stdout) {
             text += "\n===== stdout =====\n";

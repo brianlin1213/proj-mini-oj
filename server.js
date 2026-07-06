@@ -46,6 +46,24 @@ function ensureDataFiles() {
     }
 }
 
+function getNumberOrDefault(value, defaultValue) {
+    const number = Number(value);
+
+    if (Number.isFinite(number)) {
+        return number;
+    }
+
+    return defaultValue;
+}
+
+function getBooleanOrDefault(value, defaultValue) {
+    if (typeof value === "boolean") {
+        return value;
+    }
+
+    return defaultValue;
+}
+
 function normalizeProblem(problem) {
     const now = new Date().toISOString();
 
@@ -57,6 +75,13 @@ function normalizeProblem(problem) {
         code: problem.code ?? "",
         input: problem.input ?? "",
         answer: problem.answer ?? "",
+
+        attemptCount: getNumberOrDefault(problem.attemptCount, 0),
+        acceptedCount: getNumberOrDefault(problem.acceptedCount, 0),
+        isAccepted: getBooleanOrDefault(problem.isAccepted, false),
+        lastAttemptAt: problem.lastAttemptAt || null,
+        lastAcceptedAt: problem.lastAcceptedAt || null,
+
         createdAt: problem.createdAt || now,
         updatedAt: problem.updatedAt || now
     };
@@ -340,6 +365,22 @@ app.post("/api/problems/save", (req, res) => {
             code: req.body.code ?? existing.code,
             input: req.body.input ?? existing.input,
             answer: req.body.answer ?? existing.answer,
+
+            attemptCount: getNumberOrDefault(
+                req.body.attemptCount,
+                existing.attemptCount
+            ),
+            acceptedCount: getNumberOrDefault(
+                req.body.acceptedCount,
+                existing.acceptedCount
+            ),
+            isAccepted: getBooleanOrDefault(
+                req.body.isAccepted,
+                existing.isAccepted
+            ),
+            lastAttemptAt: req.body.lastAttemptAt ?? existing.lastAttemptAt,
+            lastAcceptedAt: req.body.lastAcceptedAt ?? existing.lastAcceptedAt,
+
             createdAt: existing.createdAt,
             updatedAt: now
         });
@@ -375,6 +416,13 @@ app.post("/api/problems/save", (req, res) => {
         code: req.body.code ?? "",
         input: req.body.input ?? "",
         answer: req.body.answer ?? "",
+
+        attemptCount: getNumberOrDefault(req.body.attemptCount, 0),
+        acceptedCount: getNumberOrDefault(req.body.acceptedCount, 0),
+        isAccepted: getBooleanOrDefault(req.body.isAccepted, false),
+        lastAttemptAt: req.body.lastAttemptAt || null,
+        lastAcceptedAt: req.body.lastAcceptedAt || null,
+
         createdAt: now,
         updatedAt: now
     });
@@ -391,7 +439,13 @@ app.post("/api/problems/save", (req, res) => {
 });
 
 app.get("/api/problems", (req, res) => {
-    const problems = readProblems();
+    const problems = readProblems()
+        .sort((a, b) => {
+            const bTime = new Date(b.updatedAt || 0).getTime();
+            const aTime = new Date(a.updatedAt || 0).getTime();
+
+            return bTime - aTime;
+        });
 
     res.json({
         ok: true,
