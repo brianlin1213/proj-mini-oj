@@ -10,7 +10,8 @@ import { marked } from "https://esm.sh/marked";
 
 import {
     parseMarkdownProblem,
-    parseNthuProblem
+    parseNthuProblem,
+    parseGpeHelperProblem
 } from "./importers.js";
 
 const cppTemplate = `#include <bits/stdc++.h>
@@ -335,6 +336,8 @@ window.importProblemFromText = function () {
             parsed = parseMarkdownProblem(rawText);
         } else if (source === "nthu") {
             parsed = parseNthuProblem(rawText);
+        } else if (source === "gpe") {
+            parsed = parseGpeHelperProblem(rawText);
         } else {
             throw new Error(`Unsupported source: ${source}`);
         }

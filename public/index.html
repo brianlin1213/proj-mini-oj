@@ -481,12 +481,12 @@
     <div class="problem-meta">
         <div>
             <label>Problem ID</label>
-            <input id="problemId" type="text" placeholder="e.g. nthu-merge-sort-problem">
+            <input id="problemId" type="text" placeholder="e.g. gpe-10038-disk-tree">
         </div>
 
         <div>
             <label>Problem Title</label>
-            <input id="problemTitle" type="text" placeholder="e.g. Merge Sort Problem">
+            <input id="problemTitle" type="text" placeholder="e.g. 10038: Disk Tree">
         </div>
     </div>
 
@@ -560,15 +560,17 @@
                 <select id="importSource">
                     <option value="markdown">Mini OJ Markdown</option>
                     <option value="nthu">NTHU AdaLab Raw Text</option>
+                    <option value="gpe">GPE Helper Raw Text</option>
                 </select>
             </div>
 
             <div class="hint">
-                Markdown mode expects frontmatter like:<br>
-                <code>source</code>, <code>id</code>, <code>title</code>, <code>language</code>, then Markdown sections and fenced sample input/output.
+                GPE mode supports copied text like <code>10038:Disk Tree</code>, <code>Time Limit</code>,
+                <code>Description</code>, <code>Input</code>, <code>Output</code>, <code>Sample Input</code>,
+                <code>Sample Output</code>, <code>Source</code>.
             </div>
 
-            <textarea id="rawProblemText" placeholder="Paste Markdown or raw problem text here..."></textarea>
+            <textarea id="rawProblemText" placeholder="Paste Markdown, NTHU raw text, or GPE Helper raw text here..."></textarea>
 
             <div class="modal-actions">
                 <button onclick="clearImportText()">Clear</button>
