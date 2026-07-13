@@ -453,6 +453,33 @@ app.get("/api/problems", (req, res) => {
     });
 });
 
+app.delete("/api/problems/:problemId", (req, res) => {
+    const problemId = req.params.problemId;
+    const problems = readProblems();
+
+    const targetIndex = problems.findIndex(
+        (problem) => problem.problemId === problemId
+    );
+
+    if (targetIndex < 0) {
+        return res.status(404).json({
+            ok: false,
+            message: `Problem "${problemId}" was not found.`
+        });
+    }
+
+    const deletedProblem = problems[targetIndex];
+    problems.splice(targetIndex, 1);
+
+    writeProblems(problems);
+
+    res.json({
+        ok: true,
+        message: `Problem "${problemId}" deleted successfully.`,
+        deletedProblem
+    });
+});
+
 app.get("/api/problems/:problemId", (req, res) => {
     const problems = readProblems();
     const problemId = req.params.problemId;

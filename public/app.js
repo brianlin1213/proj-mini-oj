@@ -75,12 +75,29 @@ const editor = new EditorView({
         closeBrackets(),
         bracketMatching(),
         keymap.of([
+            {
+                key: "Shift-Enter",
+                run: function () {
+                    window.runCode();
+                    return true;
+                }
+            },
             indentWithTab,
             ...closeBracketsKeymap
         ])
     ],
     parent: document.getElementById("editor")
 });
+
+const editorResizeBox = document.querySelector(".editor-resize-box");
+
+if (editorResizeBox && window.ResizeObserver) {
+    const editorResizeObserver = new ResizeObserver(() => {
+        editor.requestMeasure();
+    });
+
+    editorResizeObserver.observe(editorResizeBox);
+}
 
 marked.setOptions({
     gfm: true,
@@ -555,6 +572,7 @@ window.loadProblemList = async function () {
                 : "Unknown time";
 
             const encodedProblemId = encodeURIComponent(problem.problemId);
+            const encodedProblemTitle = encodeURIComponent(problem.problemTitle || "");
 
             const attemptCount = Number(problem.attemptCount || 0);
             const acceptedCount = Number(problem.acceptedCount || 0);
@@ -589,9 +607,15 @@ window.loadProblemList = async function () {
                     </div>
                 </div>
 
-                <button onclick="loadProblem('${encodedProblemId}')">
-                    Load
-                </button>
+                <div class="problem-actions">
+                    <button onclick="loadProblem('${encodedProblemId}')">
+                        Load
+                    </button>
+
+                    <button class="danger-button" onclick="deleteProblem('${encodedProblemId}', '${encodedProblemTitle}')">
+                        Delete
+                    </button>
+                </div>
             `;
 
             problemList.appendChild(item);
@@ -652,6 +676,66 @@ window.loadProblem = async function (encodedProblemId) {
         statusBox.textContent = "Status: Load Failed";
         outputBox.textContent = err.toString();
         notify(`Load failed.\n\n${err.toString()}`);
+    }
+};
+
+window.deleteProblem = async function (encodedProblemId, encodedProblemTitle) {
+    const problemId = decodeURIComponent(encodedProblemId);
+    const problemTitle = decodeURIComponent(encodedProblemTitle || "");
+
+    const confirmed = window.confirm(
+        `Delete this problem?\n\n` +
+        `Problem ID: ${problemId}\n` +
+        `Title: ${problemTitle}\n\n` +
+        `This action cannot be undone.`
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    const statusBox = document.getElementById("status");
+    const outputBox = document.getElementById("output");
+
+    statusBox.textContent = "Status: Deleting...";
+    outputBox.textContent = `Deleting problem ${problemId}...`;
+
+    try {
+        const response = await fetch(`/api/problems/${encodedProblemId}`, {
+            method: "DELETE"
+        });
+
+        const result = await response.json();
+
+        if (!result.ok) {
+            statusBox.textContent = "Status: Delete Failed";
+            outputBox.textContent = result.message || "Delete failed.";
+            notify(result.message || "Delete failed.");
+            return;
+        }
+
+        if (loadedProblemId === problemId) {
+            loadedProblemId = null;
+            currentProblemStats = createEmptyStats();
+        }
+
+        statusBox.textContent = "Status: Deleted";
+        outputBox.textContent =
+            `Deleted successfully.\n` +
+            `Problem ID: ${problemId}\n` +
+            `Title: ${problemTitle}\n`;
+
+        notify(
+            `Problem deleted.\n\n` +
+            `Problem ID: ${problemId}\n` +
+            `Title: ${problemTitle}`
+        );
+
+        loadProblemList();
+    } catch (err) {
+        statusBox.textContent = "Status: Delete Failed";
+        outputBox.textContent = err.toString();
+        notify(`Delete failed.\n\n${err.toString()}`);
     }
 };
 
