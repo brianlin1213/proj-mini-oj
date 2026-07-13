@@ -82,6 +82,16 @@
             background: #374151;
         }
 
+        .danger-button {
+            background: #3f1d1d;
+            color: #fecaca;
+            border-color: #7f1d1d;
+        }
+
+        .danger-button:hover {
+            background: #7f1d1d;
+        }
+
         .container {
             display: grid;
             grid-template-columns: 1.5fr 1fr;
@@ -94,6 +104,22 @@
             padding: 15px;
             border-radius: 8px;
             border: 1px solid #374151;
+        }
+
+        .code-panel {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .editor-resize-box {
+            height: 430px;
+            min-height: 220px;
+            max-height: 900px;
+            resize: vertical;
+            overflow: auto;
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 6px;
         }
 
         textarea {
@@ -121,8 +147,8 @@
         }
 
         #editor {
-            height: 430px;
-            border: 1px solid #374151;
+            height: 100%;
+            border: none;
             font-size: 14px;
         }
 
@@ -427,6 +453,17 @@
             color: #cbd5e1;
         }
 
+        .problem-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .problem-actions button {
+            margin-left: 0;
+            white-space: nowrap;
+        }
+
         .empty-history {
             color: #9ca3af;
             font-style: italic;
@@ -556,9 +593,11 @@
     </div>
 
     <div class="container">
-        <div class="panel">
+        <div class="panel code-panel">
             <h2>Code</h2>
-            <div id="editor"></div>
+            <div class="editor-resize-box">
+                <div id="editor"></div>
+            </div>
         </div>
 
         <div class="panel">
