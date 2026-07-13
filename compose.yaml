@@ -1,0 +1,13 @@
+services:
+  mini-oj:
+    image: ${MINIOJ_IMAGE}
+    container_name: ${CONTAINER_NAME}
+    ports:
+      - "${PORT}:${PORT}"
+    volumes:
+      - ${DATA_DIR}:/app/data
+    environment:
+      PORT: ${PORT}
+      APP_ENV: ${APP_ENV}
+      APP_LABEL: ${APP_LABEL}
+    restart: unless-stopped
